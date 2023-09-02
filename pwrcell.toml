@@ -1,46 +1,83 @@
+#region points
+
+#region Generac Inverter (102)
+[[models.102]]
+point = "PhVphA"
+interval = "15"
+[[models.102]]
+point = "PhVphB"
+interval = "15"
+#endregion
+
+#region Generac REbus Status (64207)
+[[models.64207]]
+point = "St"
+interval = "15"
+
+[[models.64207]]
+point = "P"
+interval = "15"
+
+[[models.64207]]
+point = "E"
+interval = "60"
+
+[[models.64207]]
+point = "I"
+interval = "15"
+
+[[models.64207]]
+point = "V"
+interval = "15"
+[[models.64207]]
+point = "T"
+interval = "30"
+
+[[models.64207]]
+point = "Ev"
+interval = "60"
+
+[[models.64207]]
+point = "RB"
+interval = "60"
+
+#endregion
+#endregion
+
+#region units
 [[unit]]
-type = "beacon"
 addr = "127.0.0.1:5083"
 slave_id = "1"
 
 [[unit]]
-type = "inverter"
 addr = "127.0.0.1:5083"
 slave_id = "3"
 
 [[unit]]
-type = "battery"
 addr = "127.0.0.1:5083"
 slave_id = "4"
 
 [[unit]]
-type = "battery"
 addr = "127.0.0.1:5083"
 slave_id = "5"
 
 [[unit]]
-type = "battery"
 addr = "127.0.0.1:5083"
 slave_id = "6"
 
 [[unit]]
-type = "pvlink"
 addr = "127.0.0.1:5083"
 slave_id = "8"
 
 [[unit]]
-type = "pvlink"
 addr = "127.0.0.1:5083"
 slave_id = "9"
 
 [[unit]]
-type = "pvlink"
 addr = "127.0.0.1:5083"
 slave_id = "10"
 
 [[unit]]
-type = "pvlink"
 addr = "127.0.0.1:5083"
 slave_id = "11"
-
-
+#endregion

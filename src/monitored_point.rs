@@ -1,6 +1,7 @@
 use std::time::Duration;
 use sunspec_rs::sunspec_data::Point;
 use anyhow::Result;
+use sunspec_rs::sunspec::ModelData;
 
 #[derive(Debug)]
 pub struct MonitoredPoint {
@@ -14,8 +15,7 @@ pub struct MonitoredPoint {
 impl MonitoredPoint {
     pub fn new(model: String, name: String, interval: Duration) -> anyhow::Result<Self> {
         let point: Point = Point::default();
-        let topic: String = String::from("wee");
-
+        info!("Creating a monitoredpoint for {model}/{name}");
 
         Ok(
             MonitoredPoint {
@@ -23,7 +23,7 @@ impl MonitoredPoint {
                 name,
                 interval,
                 point,
-                topic,
+                topic: String::default()
             }
         )
     }

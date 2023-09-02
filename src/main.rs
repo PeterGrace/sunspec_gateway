@@ -1,5 +1,5 @@
-#[macro_use]
-extern crate tracing;
+#[macro_use] extern crate tracing;
+extern crate strum;
 
 mod pwrcell_unit;
 mod cli_args;
@@ -11,11 +11,11 @@ use clap::Parser;
 use tracing_log::AsTrace;
 use tracing_subscriber;
 use lazy_static::lazy_static;
-use sunspec_rs::sunspec::SunSpecConnection;
-use sunspec_rs::sunspec_data::SunSpecData;
 use tokio::sync::RwLock;
 use config::Config;
 use std::process;
+use futures::future::join_all;
+use crate::pwrcell_unit::poll_loop;
 
 lazy_static! {
     static ref SETTINGS: RwLock<Config> = RwLock::new({
@@ -63,7 +63,6 @@ async fn main() {
     for u in units {
         let table = u.clone().into_table().unwrap();
         match PWRCellUnit::new(
-            table.clone().get("type").unwrap().to_string(),
             table.clone().get("addr").unwrap().to_string().parse().unwrap(),
             table.clone().get("slave_id").unwrap().to_string(),
         ).await {
@@ -74,6 +73,11 @@ async fn main() {
             }
         };
     }
-
-    //warn!("{:#?}", devices);
+    let mut tasks = vec![];
+    for d in devices {
+        tasks.push(tokio::task::spawn(async move {
+            poll_loop(&d).await;
+        }));
+    }
+    let result = futures::future::join_all(tasks).await;
 }
