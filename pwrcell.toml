@@ -45,39 +45,39 @@ interval = "60"
 #endregion
 
 #region units
-[[unit]]
-addr = "127.0.0.1:5083"
-slave_id = "1"
+#[[unit]]
+#addr = "127.0.0.1:5083"
+#slave_id = "1"
 
 [[unit]]
 addr = "127.0.0.1:5083"
 slave_id = "3"
 
-[[unit]]
-addr = "127.0.0.1:5083"
-slave_id = "4"
-
-[[unit]]
-addr = "127.0.0.1:5083"
-slave_id = "5"
-
-[[unit]]
-addr = "127.0.0.1:5083"
-slave_id = "6"
-
-[[unit]]
-addr = "127.0.0.1:5083"
-slave_id = "8"
-
-[[unit]]
-addr = "127.0.0.1:5083"
-slave_id = "9"
-
-[[unit]]
-addr = "127.0.0.1:5083"
-slave_id = "10"
-
-[[unit]]
-addr = "127.0.0.1:5083"
-slave_id = "11"
+#[[unit]]
+#addr = "127.0.0.1:5083"
+#slave_id = "4"
+#
+#[[unit]]
+#addr = "127.0.0.1:5083"
+#slave_id = "5"
+#
+#[[unit]]
+#addr = "127.0.0.1:5083"
+#slave_id = "6"
+#
+#[[unit]]
+#addr = "127.0.0.1:5083"
+#slave_id = "8"
+#
+#[[unit]]
+#addr = "127.0.0.1:5083"
+#slave_id = "9"
+#
+#[[unit]]
+#addr = "127.0.0.1:5083"
+#slave_id = "10"
+#
+#[[unit]]
+#addr = "127.0.0.1:5083"
+#slave_id = "11"
 #endregion

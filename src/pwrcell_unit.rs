@@ -1,15 +1,13 @@
 use sunspec_rs::sunspec::{ModelData, SunSpecConnection};
 use anyhow::{Result, bail};
-use sunspec_rs::sunspec_data::{Model, ResponseType, SunSpecData};
+use sunspec_rs::sunspec_data::{Model, Point, ResponseType, SunSpecData};
 use crate::monitored_point::MonitoredPoint;
 use strum_macros::{EnumString, Display};
 use std::str::FromStr;
-use config::Value;
-use tokio::time::{Instant, Duration,sleep};
-use crate::SETTINGS;
+
 
 const COMMON_MODEL_ID: u16 = 1_u16;
-const MINIMUM_POLL_INTERVAL: u16 = 15_u16;
+
 
 #[derive(EnumString, Debug, Eq, PartialEq, Display)]
 #[strum(ascii_case_insensitive)]
@@ -92,57 +90,3 @@ impl PWRCellUnit {
 
 }
 
-pub async fn poll_loop(unit: &PWRCellUnit) {
-    let rcpn = &unit.rcp_number;
-    let config = SETTINGS.read().await;
-    let mut points: Vec<MonitoredPoint> = vec![];
-    for (id, _) in unit.conn.models.iter() {
-        match config.get_table(format!("models.{id}").as_str()) {
-            Ok(m) => {
-                let point = match m.get("point") {
-                    Some(p) => {
-                        let fuck = p.clone();
-                        fuck.into_string().unwrap()
-                    },
-                    None => {
-                        warn!(%rcpn, "model {id} missing point def in config, skipping point");
-                        continue;
-                    }
-                };
-                let interval = match m.get("interval") {
-                    Some(i) => {
-                        let fuck = i.clone();
-                        fuck.into_uint().unwrap()
-                    },
-                    None => {
-                        warn!(%rcpn, "model {id} missing interval def in config, skipping point");
-                        continue;
-                    }
-                };
-                match MonitoredPoint::new(id.to_string(), point.clone(), Duration::from_secs(interval)){
-                    Ok(p) => points.push(p),
-                    Err(e) => {
-                        warn!(%rcpn, "unable to create MonitoredPoint for {id}/{point}: {e}");
-                        continue;
-                    }
-                }
-
-            },
-            Err(e) => {
-                warn!(%rcpn, "Can't find any model points defined for models.{id} in config");
-            }
-        }
-
-
-    }
-
-
-    loop {
-        for p in points.iter() {
-            //let val = unit.conn.get_point(p.)
-        }
-
-        info!(%rcpn, "Device tick");
-        let _ = sleep(Duration::from_secs(MINIMUM_POLL_INTERVAL.into())).await;
-    }
-}

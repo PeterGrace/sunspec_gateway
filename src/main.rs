@@ -4,6 +4,7 @@ extern crate strum;
 mod pwrcell_unit;
 mod cli_args;
 mod monitored_point;
+mod poll;
 
 use pwrcell_unit::PWRCellUnit;
 use crate::cli_args::CliArgs;
@@ -15,7 +16,7 @@ use tokio::sync::RwLock;
 use config::Config;
 use std::process;
 use futures::future::join_all;
-use crate::pwrcell_unit::poll_loop;
+use crate::poll::poll_loop;
 
 lazy_static! {
     static ref SETTINGS: RwLock<Config> = RwLock::new({
