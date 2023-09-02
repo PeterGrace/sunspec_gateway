@@ -1,0 +1,46 @@
+[[unit]]
+type = "beacon"
+addr = "127.0.0.1:5083"
+slave_id = "1"
+
+[[unit]]
+type = "inverter"
+addr = "127.0.0.1:5083"
+slave_id = "3"
+
+[[unit]]
+type = "battery"
+addr = "127.0.0.1:5083"
+slave_id = "4"
+
+[[unit]]
+type = "battery"
+addr = "127.0.0.1:5083"
+slave_id = "5"
+
+[[unit]]
+type = "battery"
+addr = "127.0.0.1:5083"
+slave_id = "6"
+
+[[unit]]
+type = "pvlink"
+addr = "127.0.0.1:5083"
+slave_id = "8"
+
+[[unit]]
+type = "pvlink"
+addr = "127.0.0.1:5083"
+slave_id = "9"
+
+[[unit]]
+type = "pvlink"
+addr = "127.0.0.1:5083"
+slave_id = "10"
+
+[[unit]]
+type = "pvlink"
+addr = "127.0.0.1:5083"
+slave_id = "11"
+
+
