@@ -1,12 +1,16 @@
 [package]
-name = "pwrcell_rs"
+name = "sunspec_gateway"
 version = "0.1.0"
 edition = "2021"
+authors = ["Peter Grace"]
+description = "Translate sunspec-compliant equipment metrics into MQTT"
+repository = "https://github.com/PeterGrace/sunspec_gateway"
+license = "MIT"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-tokio = { version = "1.27.0", features = ["time", "tracing", "macros", "rt-multi-thread"] }
+tokio = { version = "1.27.0", features = ["sync", "time", "tracing", "macros", "rt-multi-thread"] }
 clap-verbosity-flag = "2.0.1"
 tracing = "0.1.37"
 tracing-subscriber = "0.3.16"
@@ -18,7 +22,7 @@ anyhow = "1.0.75"
 strum = { version = "0.25.0", features = ["derive"] }
 strum_macros = "0.25.2"
 futures = "0.3.28"
-
-[dependencies.sunspec_rs]
-version = "0.1.0"
-path = "../sunspec_rs"
+rumqttc = "0.22.0"
+serde = {version="1.0.185", features=["derive"]}
+serde_json = "1.0.105"
+sunspec_rs = "0.1.1"

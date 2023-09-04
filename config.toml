@@ -1,12 +1,23 @@
+mqtt_server_addr= "10.174.2.40"
+mqtt_server_port = 1883
+mqtt_username = "pwrcell_rs"
+mqtt_password = "pwrcell_rs"
+
 #region points
 
 #region Generac Inverter (102)
 [[models.102]]
 point = "PhVphA"
 interval = "15"
+device_class = "voltage"
+state_class = "measurement"
+precision = 1
 [[models.102]]
 point = "PhVphB"
 interval = "15"
+device_class = "voltage"
+state_class = "measurement"
+precision = 1
 #endregion
 
 #region Generac REbus Status (64207)
