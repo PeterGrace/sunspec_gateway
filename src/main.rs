@@ -2,31 +2,31 @@
 extern crate tracing;
 extern crate strum;
 
-mod sunspec_unit;
 mod cli_args;
+mod ipc;
 mod monitored_point;
-mod sunspec_poll;
 mod mqtt_connection;
 mod mqtt_poll;
-mod ipc;
+mod sunspec_poll;
+mod sunspec_unit;
 
-use std::collections::VecDeque;
-use sunspec_unit::SunSpecUnit;
 use crate::cli_args::CliArgs;
-use clap::Parser;
-use tracing_log::AsTrace;
-use tracing_subscriber;
-use lazy_static::lazy_static;
-use tokio::sync::{RwLock, mpsc, Mutex};
-use config::Config;
-use std::process;
-use std::sync::Arc;
-use std::time::Duration;
-use tokio::time::sleep;
 use crate::ipc::{IPCMessage, Payload, PublishMessage};
 use crate::mqtt_connection::MqttConnection;
 use crate::mqtt_poll::mqtt_poll_loop;
 use crate::sunspec_poll::poll_loop;
+use clap::Parser;
+use config::Config;
+use lazy_static::lazy_static;
+use std::collections::VecDeque;
+use std::process;
+use std::sync::Arc;
+use std::time::Duration;
+use sunspec_unit::SunSpecUnit;
+use tokio::sync::{mpsc, Mutex, RwLock};
+use tokio::time::sleep;
+use tracing_log::AsTrace;
+use tracing_subscriber;
 
 const MPSC_BUFFER_SIZE: usize = 100_usize;
 
@@ -89,14 +89,17 @@ async fn main() {
 
     //region create mqtt server connection and spawn mqtt thread
     let mqtt_conn = match MqttConnection::new(
-        config.get_string("mqtt_client_id").unwrap_or("sunspec_gateway".to_string()),
+        config
+            .get_string("mqtt_client_id")
+            .unwrap_or("sunspec_gateway".to_string()),
         config.get_string("mqtt_server_addr").unwrap_or_else(|_| {
             die("mqtt_server_addr not defined");
             String::default()
         }),
         config.get_int("mqtt_port").unwrap_or(1883) as u16,
         config.get_string("mqtt_username").ok(),
-        config.get_string("mqtt_password").ok()) {
+        config.get_string("mqtt_password").ok(),
+    ) {
         Ok(m) => m,
         Err(e) => {
             return die("Couldn't create mqtt connection object: {e}");
@@ -112,9 +115,17 @@ async fn main() {
     for u in units {
         let table = u.clone().into_table().unwrap();
         match SunSpecUnit::new(
-            table.clone().get("addr").unwrap().to_string().parse().unwrap(),
+            table
+                .clone()
+                .get("addr")
+                .unwrap()
+                .to_string()
+                .parse()
+                .unwrap(),
             table.clone().get("slave_id").unwrap().to_string(),
-        ).await {
+        )
+        .await
+        {
             Ok(p) => devices.push(p),
             Err(e) => {
                 die("Unable to create PWRCellUnit: {e}");
@@ -139,20 +150,18 @@ async fn main() {
         //endregion
         //region pwrcell device channel loop handling
         match rx.try_recv() {
-            Ok(ipcm) => {
-                match ipcm {
-                    IPCMessage::Outbound(o) => {
-                        msg_queue.push_front(o);
-                    }
-                    IPCMessage::Error(e) => {
-                        die(&format!("serial_number={}: {}", e.serial_number, e.msg));
-                    }
+            Ok(ipcm) => match ipcm {
+                IPCMessage::Outbound(o) => {
+                    msg_queue.push_front(o);
                 }
-            }
+                IPCMessage::Error(e) => {
+                    die(&format!("serial_number={}: {}", e.serial_number, e.msg));
+                }
+            },
             Err(_) => {}
         }
 
-//endregion
+        //endregion
 
         while let Some(msg) = msg_queue.pop_front() {
             if let Err(e) = mqtt_tx.send(IPCMessage::Outbound(msg)).await {
@@ -161,6 +170,5 @@ async fn main() {
         }
         let _ = sleep(Duration::from_millis(1000));
     }
-//endregion
+    //endregion
 }
-

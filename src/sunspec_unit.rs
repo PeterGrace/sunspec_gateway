@@ -1,12 +1,11 @@
-use anyhow::{Result, bail, Error};
+use crate::ipc::DeviceInfo;
+use crate::monitored_point::MonitoredPoint;
+use anyhow::{bail, Error, Result};
+use std::str::FromStr;
+use strum_macros::{Display, EnumString};
+use sunspec_rs::sunspec_connection::SunSpecConnection;
 use sunspec_rs::sunspec_data::SunSpecData;
 use sunspec_rs::sunspec_models::{Model, Point, ResponseType};
-use crate::monitored_point::MonitoredPoint;
-use strum_macros::{EnumString, Display};
-use std::str::FromStr;
-use sunspec_rs::sunspec_connection::SunSpecConnection;
-use crate::ipc::DeviceInfo;
-
 
 const COMMON_MODEL_ID: u16 = 1_u16;
 
@@ -42,7 +41,7 @@ impl SunSpecUnit {
             None => {
                 bail!("Couldn't get model definition for common");
             }
-            Some(m) => m
+            Some(m) => m,
         };
         let mut device_info = DeviceInfo::default();
 
@@ -53,7 +52,12 @@ impl SunSpecUnit {
                 }
             }
         }
-        let manufacturer: String = match conn.clone().get_point(common.clone(), "Mn").await.ok_or(anyhow::anyhow!("Can't get manufacturer")) {
+        let manufacturer: String = match conn
+            .clone()
+            .get_point(common.clone(), "Mn")
+            .await
+            .ok_or(anyhow::anyhow!("Can't get manufacturer"))
+        {
             Ok(p) => {
                 if let ResponseType::String(str) = p.value.unwrap() {
                     str
@@ -61,9 +65,14 @@ impl SunSpecUnit {
                     anyhow::bail!("Received a point that wasn't a string for manufacturer.");
                 }
             }
-            Err(e) => anyhow::bail!(e)
+            Err(e) => anyhow::bail!(e),
         };
-        let serial_number = match conn.clone().get_point(common.clone(), "SN").await.ok_or(anyhow::anyhow!("Can't get serial number")) {
+        let serial_number = match conn
+            .clone()
+            .get_point(common.clone(), "SN")
+            .await
+            .ok_or(anyhow::anyhow!("Can't get serial number"))
+        {
             Ok(p) => {
                 if let ResponseType::String(str) = p.value.unwrap() {
                     str
@@ -71,17 +80,24 @@ impl SunSpecUnit {
                     anyhow::bail!("Received a point that wasn't a string for serial number.");
                 }
             }
-            Err(e) => anyhow::bail!(e)
+            Err(e) => anyhow::bail!(e),
         };
-        let physical_model = match conn.clone().get_point(common.clone(), "Md").await.ok_or(anyhow::anyhow!("Can't get model name")) {
+        let physical_model = match conn
+            .clone()
+            .get_point(common.clone(), "Md")
+            .await
+            .ok_or(anyhow::anyhow!("Can't get model name"))
+        {
             Ok(p) => {
                 if let ResponseType::String(str) = p.value.unwrap() {
                     str
                 } else {
-                    anyhow::bail!("Received a point that wasn't a string for physical device model name.");
+                    anyhow::bail!(
+                        "Received a point that wasn't a string for physical device model name."
+                    );
                 }
             }
-            Err(e) => anyhow::bail!(e)
+            Err(e) => anyhow::bail!(e),
         };
         device_info.name = physical_model.clone();
         device_info.manufacturer = manufacturer.clone();
@@ -100,4 +116,3 @@ impl SunSpecUnit {
         })
     }
 }
-
