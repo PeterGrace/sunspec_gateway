@@ -3,6 +3,7 @@ extern crate tracing;
 extern crate strum;
 
 mod cli_args;
+mod date_serializer;
 mod ipc;
 mod monitored_point;
 mod mqtt_connection;
@@ -128,7 +129,7 @@ async fn main() {
         {
             Ok(p) => devices.push(p),
             Err(e) => {
-                die("Unable to create PWRCellUnit: {e}");
+                die(&format!("Unable to create connection to SunSpec Unit: {e}"));
             }
         };
     }

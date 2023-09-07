@@ -10,6 +10,7 @@ use tokio::time::sleep;
 
 pub async fn mqtt_poll_loop(mqtt: MqttConnection, mut rx: Receiver<IPCMessage>) {
     let mut conn = mqtt.event_loop;
+    let mut dlq: Vec<u16> = vec![];
     loop {
         //region MQTT loop channel handling
         match rx.try_recv() {
@@ -60,16 +61,34 @@ pub async fn mqtt_poll_loop(mqtt: MqttConnection, mut rx: Receiver<IPCMessage>) 
                         error!("mqtt disconnect packet received.");
                         return;
                     }
+                    Incoming::ConnAck(ca) => {
+                        info!("MQTT connection established.");
+                    }
+                    Incoming::PubAck(pa) => {
+                        dlq.retain(|x| *x != pa.pkid);
+                    }
+                    Incoming::PingResp => {
+                        trace!("Recv MQTT PONG");
+                    }
                     _ => {
                         info!("mqtt incoming packet: {:#?}", i);
                     }
                 }
             }
             Event::Outgoing(o) => match o {
+                Outgoing::PingReq => {
+                    trace!("Sent MQTT PING");
+                }
+                Outgoing::Publish(pb) => {
+                    dlq.push(pb);
+                }
                 _ => {
                     info!("outgoing mqtt packet: {:#?}", o);
                 }
             },
+        }
+        if dlq.len() > 0 {
+            trace!("DLQ is {}", dlq.len());
         }
         let _ = sleep(Duration::from_millis(500));
     }

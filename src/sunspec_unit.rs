@@ -1,11 +1,12 @@
 use crate::ipc::DeviceInfo;
 use crate::monitored_point::MonitoredPoint;
-use anyhow::{bail, Error, Result};
+use anyhow::bail;
+use std::collections::HashMap;
 use std::str::FromStr;
-use strum_macros::{Display, EnumString};
+use sunspec_rs::model_data::ModelData;
 use sunspec_rs::sunspec_connection::SunSpecConnection;
 use sunspec_rs::sunspec_data::SunSpecData;
-use sunspec_rs::sunspec_models::{Model, Point, ResponseType};
+use sunspec_rs::sunspec_models::ResponseType;
 
 const COMMON_MODEL_ID: u16 = 1_u16;
 
@@ -35,7 +36,10 @@ impl SunSpecUnit {
             }
         };
         let data: SunSpecData = SunSpecData::default();
-        conn.models = conn.clone().populate_models(data.clone()).await;
+        match conn.clone().populate_models(&data).await {
+            Ok(m) => conn.models = m.clone(),
+            Err(e) => bail!("Can't populate models: {e}"),
+        };
 
         let mut common = match conn.models.get(&COMMON_MODEL_ID) {
             None => {

@@ -1,5 +1,5 @@
 use anyhow;
-use rumqttc::{AsyncClient, EventLoop, MqttOptions, QoS};
+use rumqttc::{AsyncClient, EventLoop, MqttOptions};
 use tokio::time::Duration;
 
 const MQTT_KEEPALIVE_TIME: u64 = 5_u64;
