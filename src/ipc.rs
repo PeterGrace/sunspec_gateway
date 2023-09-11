@@ -37,7 +37,7 @@ pub struct HAConfigPayload {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StatePayload {
-    pub value: ValueType,
+    pub value: PayloadValueType,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -51,7 +51,7 @@ pub struct StatePayload {
 impl Default for StatePayload {
     fn default() -> Self {
         StatePayload {
-            value: ValueType::None,
+            value: PayloadValueType::None,
             last_seen: Utc::now(),
             description: None,
             label: None,
@@ -70,7 +70,7 @@ pub struct DeviceInfo {
 
 #[derive(Deserialize, Serialize, Debug, Default, Clone)]
 #[serde(untagged)]
-pub enum ValueType {
+pub enum PayloadValueType {
     Float(f64),
     Int(i64),
     String(String),

@@ -6,7 +6,7 @@ use std::str::FromStr;
 use sunspec_rs::model_data::ModelData;
 use sunspec_rs::sunspec_connection::SunSpecConnection;
 use sunspec_rs::sunspec_data::SunSpecData;
-use sunspec_rs::sunspec_models::ResponseType;
+use sunspec_rs::sunspec_models::ValueType;
 
 const COMMON_MODEL_ID: u16 = 1_u16;
 
@@ -51,7 +51,7 @@ impl SunSpecUnit {
 
         if let Some(firmware) = conn.clone().get_point(common.clone(), "Vr").await {
             if let Some(value) = firmware.value {
-                if let ResponseType::String(ver) = value {
+                if let ValueType::String(ver) = value {
                     device_info.sw_version = ver;
                 }
             }
@@ -63,7 +63,7 @@ impl SunSpecUnit {
             .ok_or(anyhow::anyhow!("Can't get manufacturer"))
         {
             Ok(p) => {
-                if let ResponseType::String(str) = p.value.unwrap() {
+                if let ValueType::String(str) = p.value.unwrap() {
                     str
                 } else {
                     anyhow::bail!("Received a point that wasn't a string for manufacturer.");
@@ -78,7 +78,7 @@ impl SunSpecUnit {
             .ok_or(anyhow::anyhow!("Can't get serial number"))
         {
             Ok(p) => {
-                if let ResponseType::String(str) = p.value.unwrap() {
+                if let ValueType::String(str) = p.value.unwrap() {
                     str
                 } else {
                     anyhow::bail!("Received a point that wasn't a string for serial number.");
@@ -93,7 +93,7 @@ impl SunSpecUnit {
             .ok_or(anyhow::anyhow!("Can't get model name"))
         {
             Ok(p) => {
-                if let ResponseType::String(str) = p.value.unwrap() {
+                if let ValueType::String(str) = p.value.unwrap() {
                     str
                 } else {
                     anyhow::bail!(

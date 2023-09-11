@@ -1,0 +1,325 @@
+---
+mqtt_server_addr: "10.174.2.40"
+mqtt_server_port: 1883
+mqtt_username: "pwrcell_rs"
+mqtt_password: "pwrcell_rs"
+units:
+  - addr: "127.0.0.1:5083"
+    slaves: [3,4,5,6,8,9,10,11]
+  - addr: "127.0.0.1:5084"
+    slaves: [3,6,7,8,9]
+  - addr: "127.0.0.1:5085"
+    slaves: [3,5,6,7]
+models:
+  "102":
+    - point: "PhVphA"
+      interval: 15
+      device_class: "voltage"
+      state_class: "measurement"
+      precision: 1
+    - point: "PhVphB"
+      interval: 15
+      device_class: "voltage"
+      state_class: "measurement"
+      precision: 1
+    - point: "W"
+      interval: 15
+      device_class: "power"
+      state_class: "measurement"
+      precision: 1
+    - point: "Hz"
+      interval: 15
+      device_class: "frequency"
+      state_class: "measurement"
+      precision: 1
+    - point: "VA"
+      interval: 15
+      device_class: "power"
+      state_class: "measurement"
+      precision: 1
+      uom: "VA"
+    - point: "VAr"
+      interval: 15
+      device_class: "power"
+      state_class: "measurement"
+      precision: 1
+      uom: "VAr"
+    - point: "PF"
+      interval: 15
+      state_class: "measurement"
+      precision: 5
+    - point: "WH"
+      interval: 60
+      device_class: "energy"
+      precision: 1
+    - point: "DCV"
+      interval: 60
+      device_class: "voltage"
+      state_class: "measurement"
+      precision: 1
+    - point: "TmpCab"
+      interval: 30
+      device_class: "temperature"
+      state_class: "measurement"
+      precision: 2
+      uom: "°C"
+    - point: "TmpTrns"
+      interval: 30
+      device_class: "temperature"
+      state_class: "measurement"
+      precision: 2
+      uom: "°C"
+    - point: "TmpOt"
+      interval: 30
+      device_class: "temperature"
+      state_class: "measurement"
+      precision: 2
+      uom: "°C"
+    - point: "TmpSnk"
+      interval: 30
+      device_class: "temperature"
+      state_class: "measurement"
+      precision: 2
+      uom: "°C"
+    - point: "St"
+      interval: 60
+    - point: "Evt1"
+      interval: 60
+  "404":
+    - point: "Evt"
+      interval: 30
+    - point: "Tmp"
+      interval: 30
+      device_class: "temperature"
+      state_class: "measurement"
+      precision: 2
+      uom: "°C"
+    - point: "DCWh"
+      interval: 60
+      device_class: "energy"
+      precision: 1
+    - point: "DCV"
+      interval: 60
+      device_class: "voltage"
+      state_class: "measurement"
+      precision: 1
+    - point: "DCA"
+      interval: 60
+      device_class: "current"
+      state_class: "measurement"
+      precision: 1
+    - point: "DCW"
+      interval: 60
+      device_class: "power"
+      state_class: "measurement"
+      precision: 1
+  "802":
+    - point: "Evt1"
+      interval: 60
+    - point: "State"
+      interval: 60
+    - point: "CellVMin"
+      interval: 60
+      precision: 1
+      device_class: "voltage"
+      state_class: "measurement"
+    - point: "CellVMax"
+      interval: 60
+      precision: 1
+      device_class: "voltage"
+      state_class: "measurement"
+    - point: "W"
+      interval: 60
+      precision: 1
+      device_class: "power"
+      state_class: "measurement"
+    - point: "SoC"
+      interval: 60
+      precision: 2
+      uom: "%"
+    - point: "SoH"
+      interval: 60
+      precision: 2
+      uom: "%"
+  "804":
+    - point: "ConFail"
+      interval: 60
+    - point: "SoC"
+      interval: 60
+      uom: "%"
+    - point: "SoH"
+      interval: 60
+      uom: "%"
+    - point: "A"
+      interval: 15
+      device_class: "current"
+      state_class: "measurement"
+      precision: 1
+    - point: "V"
+      interval: 15
+      device_class: "voltage"
+      state_class: "measurement"
+      precision: 1
+  "64200":
+    - point: "SysMd"
+      interval: 60
+  "64204":
+    - point: "Px1"
+      interval: 15
+      device_class: "power"
+      state_class: "measurement"
+      precision: 1
+    - point: "Px2"
+      interval: 15
+      device_class: "power"
+      state_class: "measurement"
+      precision: 1
+    - point: "Whx"
+      interval: 15
+      device_class: "energy"
+      precision: 1
+    - point: "Whin"
+      interval: 15
+      device_class: "energy"
+      precision: 1
+  "64207":
+    - point: "St"
+      interval: 30
+    - point: "P"
+      interval: 15
+      device_class: "power"
+      state_class: "measurement"
+      precision: 1
+    - point: "E"
+      interval: 15
+      device_class: "energy"
+      precision: 1
+    - point: "I"
+      interval: 15
+      device_class: "current"
+      state_class: "measurement"
+      precision: 1
+    - point: "V"
+      interval: 15
+      device_class: "voltage"
+      state_class: "measurement"
+      precision: 1
+    - point: "T"
+      interval: 30
+      device_class: "temperature"
+      state_class: "measurement"
+      precision: 2
+      uom: "°C"
+    - point: "Ev"
+      interval: 60
+    - point: "RB"
+      interval: 60
+  "64208":
+    - point: "SysMd"
+      interval: 60
+    - point: "ErrorWord"
+      interval: 60
+    - point: "CTPow"
+      interval: 15
+      precision: 2
+      device_class: "power"
+      state_class: "measurement"
+    - point: "WhIn"
+      interval: 60
+      precision: 0
+      device_class: "energy"
+      state_class: "total_increasing"
+    - point: "WhOut"
+      interval: 60
+      precision: 0
+      device_class: "energy"
+      state_class: "total_increasing"
+    - point: "EnableBits"
+      interval: 60
+    - point: "RelayStatus"
+      interval: 60
+    - point: "StatusWord"
+      interval: 60
+    - point: "LineStatus"
+      interval: 30
+  "64209":
+    - point: "ErrorWord"
+      interval: 60
+    - point: "WhIn"
+      interval: 60
+      precision: 0
+      device_class: "energy"
+      state_class: "total_increasing"
+    - point: "WhOut"
+      interval: 60
+      precision: 0
+      device_class: "energy"
+      state_class: "total_increasing"
+    - point: "EnableBits"
+      interval: 60
+    - point: "InhibitBits"
+      interval: 60
+    - point: "StatusBits"
+      interval: 60
+    - point: "BMSStatus"
+      interval: 30
+  "64251":
+    - point: "Ena"
+      interval: 30
+      readwrite: true
+    - point: "ErrorWord"
+      interval: 30
+    - point: "EnableBits"
+      interval: 30
+    - point: "StatusWord"
+      interval: 30
+    - point: "Iin"
+      interval: 15
+      device_class: "current"
+      state_class: "measurement"
+      precision: 1
+    - point: "Vin"
+      interval: 15
+      device_class: "voltage"
+      state_class: "measurement"
+      precision: 1
+  "64263":
+    - point: "Enable"
+      interval: 60
+      readwrite: true
+    - point: "PVRSSLockoutError"
+      interval: 60
+    - point: "ClearPVRSSLockoutError"
+      interval: 300
+      readwrite: true
+  "64264":
+    - point: "Status"
+      interval: 60
+    - point: "SelfTestResults"
+      interval: 300
+    - point: "InstalledCount"
+      interval: 300
+    - point: "DetectedCount"
+      interval: 300
+    - point: "Vlow"
+      interval: 300
+      device_class: "voltage"
+      state_class: "measurement"
+      precision: 1
+    - point: "VocCompensated"
+      interval: 300
+      device_class: "voltage"
+      state_class: "measurement"
+      precision: 1
+    - point: "TimesCountResultWasSuccess"
+      interval: 300
+      state_class: "total_increasing"
+    - point: "TimesCountResultWasLowSun"
+      interval: 300
+      state_class: "total_increasing"
+    - point: "TimesCountResultWasFail"
+      interval: 300
+      state_class: "total_increasing"
+    - point: "TimesCountResultWasConsecutiveFail"
+      interval: 300
+      state_class: "total_increasing"

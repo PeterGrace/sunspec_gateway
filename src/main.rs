@@ -18,6 +18,7 @@ use crate::mqtt_poll::mqtt_poll_loop;
 use crate::sunspec_poll::poll_loop;
 use clap::Parser;
 use config::Config;
+use console_subscriber;
 use lazy_static::lazy_static;
 use std::collections::VecDeque;
 use std::process;
@@ -25,9 +26,9 @@ use std::sync::Arc;
 use std::time::Duration;
 use sunspec_unit::SunSpecUnit;
 use tokio::sync::{mpsc, Mutex, RwLock};
-use tokio::time::sleep;
+use tokio::time::{sleep, timeout};
 use tracing_log::AsTrace;
-use tracing_subscriber;
+use tracing_subscriber::prelude::*;
 
 const MPSC_BUFFER_SIZE: usize = 100_usize;
 
@@ -36,7 +37,7 @@ lazy_static! {
     static ref SETTINGS: RwLock<Config> = RwLock::new({
         let cfg_file = match std::env::var("CONFIG_FILE_PATH") {
             Ok(s) => s,
-            Err(_e) => { "./config.toml".to_string()}
+            Err(_e) => { "./config.yaml".to_string()}
         };
         let settings = match Config::builder()
             .add_source(config::File::with_name(&cfg_file))
@@ -69,17 +70,24 @@ async fn main() {
     let cli = CliArgs::parse();
     let (tx, mut rx) = mpsc::channel(MPSC_BUFFER_SIZE);
     let (mqtt_tx, mut mqtt_rx) = mpsc::channel(MPSC_BUFFER_SIZE);
-    // let waker = futures::task::noop_waker();
-    // let mut cx = Context::from_waker(&waker);
 
-    tracing_subscriber::fmt()
-        .with_max_level(cli.verbose.log_level_filter().as_trace())
-        .init();
+    if Some(true) == cli.ttrace {
+        let console_layer = console_subscriber::spawn();
+        tracing_subscriber::registry()
+            .with(console_layer)
+            .with(tracing_subscriber::fmt::layer().with_level(true))
+            .init();
+    } else {
+        tracing_subscriber::fmt()
+            .with_max_level(cli.verbose.log_level_filter().as_trace())
+            .init();
+    }
+
     //endregion
 
-    //region get config and load in pwrcell unit defs
+    //region get config and load in sunspec unit defs
     let config = SETTINGS.read().await;
-    let units = match config.get_array("unit") {
+    let units = match config.get_array("units") {
         Ok(u) => u,
         Err(e) => {
             error!("unable to get unit definitions from config file: {e}");
@@ -111,36 +119,49 @@ async fn main() {
     });
     //endregion
 
-    //region populate pwrcell devices into an array
+    //region populate sunspec devices into an array
     let mut devices: Vec<SunSpecUnit> = vec![];
     for u in units {
         let table = u.clone().into_table().unwrap();
-        match SunSpecUnit::new(
-            table
-                .clone()
-                .get("addr")
-                .unwrap()
-                .to_string()
-                .parse()
-                .unwrap(),
-            table.clone().get("slave_id").unwrap().to_string(),
-        )
-        .await
-        {
-            Ok(p) => devices.push(p),
-            Err(e) => {
-                die(&format!("Unable to create connection to SunSpec Unit: {e}"));
-            }
-        };
+        let v_slaves = table
+            .clone()
+            .get("slaves")
+            .unwrap()
+            .clone()
+            .into_array()
+            .unwrap();
+        for s in v_slaves.iter() {
+            let slave = s.clone().into_uint().unwrap();
+            match SunSpecUnit::new(
+                table
+                    .clone()
+                    .get("addr")
+                    .unwrap()
+                    .to_string()
+                    .parse()
+                    .unwrap(),
+                slave.to_string(),
+            )
+            .await
+            {
+                Ok(p) => devices.push(p),
+                Err(e) => {
+                    die(&format!("Unable to create connection to SunSpec Unit: {e}"));
+                }
+            };
+        }
     }
     //endregion
 
-    //region create pwrcell thread workers
+    //region create sunspec thread workers
     let mut tasks = vec![];
     for d in devices {
         let tx = tx.clone();
         tasks.push(tokio::task::spawn(async move {
-            poll_loop(&d, tx).await;
+            match poll_loop(&d, tx).await {
+                Ok(_) => info!("poll_loop exited ok."),
+                Err(e) => die(&format!("poll died: {e}")),
+            };
         }));
     }
     //endregion
@@ -149,9 +170,9 @@ async fn main() {
     let mut msg_queue: VecDeque<PublishMessage> = VecDeque::new();
     loop {
         //endregion
-        //region pwrcell device channel loop handling
-        match rx.try_recv() {
-            Ok(ipcm) => match ipcm {
+        //region sunspec device channel loop handling
+        match rx.recv().await {
+            Some(ipcm) => match ipcm {
                 IPCMessage::Outbound(o) => {
                     msg_queue.push_front(o);
                 }
@@ -159,16 +180,31 @@ async fn main() {
                     die(&format!("serial_number={}: {}", e.serial_number, e.msg));
                 }
             },
-            Err(_) => {}
+            None => {
+                error!("Error receiving ipc message, None returned on rx.recv().await")
+            }
         }
 
         //endregion
 
         while let Some(msg) = msg_queue.pop_front() {
-            if let Err(e) = mqtt_tx.send(IPCMessage::Outbound(msg)).await {
-                error!("Unable to send mqtt message: {e}");
+            match timeout(
+                Duration::from_secs(10),
+                mqtt_tx.send(IPCMessage::Outbound(msg)),
+            )
+            .await
+            {
+                Ok(future) => {
+                    if let Err(e) = future {
+                        error!("Unable to send mqtt mpsc tx message: {e}");
+                    }
+                }
+                Err(e) => {
+                    debug!("Timeout sending a mpsc transmission?: {e}");
+                }
             }
         }
+
         let _ = sleep(Duration::from_millis(1000));
     }
     //endregion

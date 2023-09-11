@@ -1,29 +1,39 @@
-use crate::ipc::{HAConfigPayload, IPCMessage, Payload, PublishMessage, StatePayload, ValueType};
+use crate::ipc::{
+    HAConfigPayload, IPCMessage, Payload, PayloadValueType, PublishMessage, StatePayload,
+};
 use crate::monitored_point::MonitoredPoint;
 use crate::sunspec_unit::SunSpecUnit;
 use crate::SETTINGS;
 use chrono::Utc;
 use rand::{thread_rng, Rng};
-use sunspec_rs::sunspec_models::ResponseType;
+use sunspec_rs::sunspec_models::ValueType;
 use tokio::sync::mpsc::Sender;
 use tokio::time::{sleep, Duration, Instant};
 
-const MINIMUM_POLL_INTERVAL: u16 = 1_u16;
+const MINIMUM_POLL_INTERVAL_SECS: u16 = 5_u16;
 
 const DEFAULT_DISPLAY_PRECISION: Option<u8> = Some(4_u8);
 
-pub async fn poll_loop(unit: &SunSpecUnit, tx: Sender<IPCMessage>) {
+pub async fn poll_loop(unit: &SunSpecUnit, tx: Sender<IPCMessage>) -> anyhow::Result<()> {
     let sn = &unit.serial_number;
     let config = SETTINGS.read().await;
     let mut points: Vec<MonitoredPoint> = vec![];
     let mut point: String = String::default();
     let mut interval: u64 = 0;
     for (id, _) in unit.conn.models.iter() {
-        let mname = format!("models.{id}");
-        let modelpoints = match config.get_array(&mname) {
-            Ok(m) => m,
-            Err(e) => {
-                info!(%sn, "Can't find any model points defined for models.{id} in config: {e}");
+        let mname = format!("{id}");
+        let models_table = config.get_table("models").unwrap();
+
+        let modelpoints = match models_table.get(&mname) {
+            Some(m) => match m.clone().into_array() {
+                Ok(pointarray) => pointarray,
+                Err(e) => {
+                    error!("configuration issue with models array in config.yaml");
+                    continue;
+                }
+            },
+            None => {
+                info!(%sn, "Can't find any model points defined for models.{id} in config.");
                 continue;
             }
         };
@@ -92,8 +102,9 @@ pub async fn poll_loop(unit: &SunSpecUnit, tx: Sender<IPCMessage>) {
 
     loop {
         for p in points.iter_mut() {
-            let time_pad = thread_rng().gen_range(0..6);
-            if Utc::now().timestamp() - p.last_report.timestamp() < (p.interval as i64 + time_pad) {
+            let interval = p.interval as i64;
+            let time_pad = thread_rng().gen_range(0..interval) as i64;
+            if Utc::now().timestamp() - p.last_report.timestamp() < (interval + time_pad) {
                 trace!("interval has not elapsed for {}", p.name.clone());
                 continue;
             }
@@ -128,22 +139,22 @@ pub async fn poll_loop(unit: &SunSpecUnit, tx: Sender<IPCMessage>) {
                         config_payload.unique_id = format!("{sn}.{}.{point_name}", p.model);
                         config_payload.entity_id = format!("sensor.{sn}_{}_{point_name}", p.model);
                         match val {
-                            ResponseType::String(str) => {
-                                info!("Response for {model}/{point_name}: {str}");
-                                state_payload.value = ValueType::String(str)
+                            ValueType::String(str) => {
+                                debug!("Response for {model}/{point_name}: {str}");
+                                state_payload.value = PayloadValueType::String(str)
                             }
-                            ResponseType::Integer(int) => {
-                                info!("Response for {model}/{point_name}: {int}");
+                            ValueType::Integer(int) => {
+                                debug!("Response for {model}/{point_name}: {int}");
                                 if p.uom.is_some() {
                                     // we are overriding the default uom from config
                                     config_payload.native_uom = p.uom.clone();
                                 } else {
                                     config_payload.native_uom = v.units.clone();
                                 }
-                                state_payload.value = ValueType::Int(int as i64)
+                                state_payload.value = PayloadValueType::Int(int as i64)
                             }
-                            ResponseType::Float(float) => {
-                                info!("Response for {model}/{point_name}: {0:.1}", float);
+                            ValueType::Float(float) => {
+                                debug!("Response for {model}/{point_name}: {0:.1}", float);
                                 if p.precision.is_some() {
                                     config_payload.suggested_display_precision = p.precision;
                                 } else {
@@ -156,7 +167,7 @@ pub async fn poll_loop(unit: &SunSpecUnit, tx: Sender<IPCMessage>) {
                                 } else {
                                     config_payload.native_uom = v.units.clone();
                                 }
-                                state_payload.value = ValueType::Float(float as f64);
+                                state_payload.value = PayloadValueType::Float(float as f64);
                                 if let Some(literal) = v.literal {
                                     if literal.label.is_some() {
                                         config_payload.name = literal.label.clone().unwrap();
@@ -166,14 +177,14 @@ pub async fn poll_loop(unit: &SunSpecUnit, tx: Sender<IPCMessage>) {
                                     state_payload.notes = literal.notes;
                                 }
                             }
-                            ResponseType::Boolean(boolean) => {
-                                info!("Response for {model}/{point_name}: {boolean}");
-                                state_payload.value = ValueType::String(boolean.to_string());
+                            ValueType::Boolean(boolean) => {
+                                debug!("Response for {model}/{point_name}: {boolean}");
+                                state_payload.value = PayloadValueType::String(boolean.to_string());
                             }
-                            ResponseType::Array(vec) => {
-                                info!("Response for {model}/{point_name}: {:#?}", vec);
+                            ValueType::Array(vec) => {
+                                debug!("Response for {model}/{point_name}: {:#?}", vec);
                                 let concat = vec.join(",");
-                                state_payload.value = ValueType::String(concat)
+                                state_payload.value = PayloadValueType::String(concat)
                             }
                         }
                         config_payload.device = unit.device_info.clone();
@@ -196,7 +207,8 @@ pub async fn poll_loop(unit: &SunSpecUnit, tx: Sender<IPCMessage>) {
             }
         }
 
-        trace!(%sn, "Device tick");
-        let _ = sleep(Duration::from_secs(MINIMUM_POLL_INTERVAL.into())).await;
+        info!(%sn, "Device tick");
+        let _ = sleep(Duration::from_secs(MINIMUM_POLL_INTERVAL_SECS.into())).await;
     }
+    error!("Aiee, leaving poll_loop");
 }
