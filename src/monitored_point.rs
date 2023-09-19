@@ -28,7 +28,7 @@ impl MonitoredPoint {
         uom: Option<String>,
         homeassistant: bool,
     ) -> anyhow::Result<Self> {
-        info!("Creating a monitoredpoint for {model}/{name}");
+        debug!("Creating a monitoredpoint for {model}/{name}");
 
         let mut interval_checked: u64 = 0_u64;
         if interval < LOWER_LIMIT_INTERVAL {

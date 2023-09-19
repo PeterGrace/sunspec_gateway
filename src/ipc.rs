@@ -1,3 +1,4 @@
+use crate::sunspec_unit::SunSpecUnit;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
@@ -90,5 +91,6 @@ pub struct IPCError {
 
 pub enum IPCMessage {
     Outbound(PublishMessage),
+    PleaseReconnect(String, u8),
     Error(IPCError),
 }

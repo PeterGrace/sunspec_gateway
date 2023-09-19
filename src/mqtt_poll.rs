@@ -96,6 +96,9 @@ pub async fn mqtt_poll_loop(mqtt: MqttConnection, mut rx: Receiver<IPCMessage>) 
                     error!("serial={}: {}", e.serial_number, e.msg);
                     return;
                 }
+                IPCMessage::PleaseReconnect(_, _) => {
+                    unreachable!();
+                }
             },
             None => {
                 error!("We are disconnected!");

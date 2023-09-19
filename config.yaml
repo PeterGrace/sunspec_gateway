@@ -142,8 +142,6 @@ models:
       precision: 2
       uom: "%"
   "804":
-    - point: "ConFail"
-      interval: 60
     - point: "SoC"
       interval: 60
       uom: "%"

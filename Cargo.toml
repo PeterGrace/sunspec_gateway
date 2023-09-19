@@ -13,7 +13,7 @@ license = "MIT"
 tokio = { version = "1.27.0", features = ["sync", "time", "tracing", "macros", "rt-multi-thread"] }
 clap-verbosity-flag = "2.0.1"
 tracing = "0.1.37"
-tracing-subscriber = "0.3.16"
+tracing-subscriber = {version = "0.3.17", features = ["time"]}
 tracing-log = "0.1.3"
 clap = { version = "4.3.24", features = ["derive", "env"] }
 config = { version = "0.13.3", features = ["yaml"] }
@@ -30,3 +30,5 @@ sunspec_rs = {path = "/home/pgrace/repos/sunspec_rs"}
 console-subscriber = "0.1.10"
 chrono = "0.4.28"
 rand = "0.8.5"
+crossterm = "0.27.0"
+thiserror = "1.0.48"

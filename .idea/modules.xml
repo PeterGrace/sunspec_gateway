@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/pwrcell_rs.iml" filepath="$PROJECT_DIR$/.idea/pwrcell_rs.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/sunspec_gateway.iml" filepath="$PROJECT_DIR$/.idea/sunspec_gateway.iml" />
     </modules>
   </component>
 </project>

@@ -1,6 +1,8 @@
 #[macro_use]
 extern crate tracing;
 extern crate strum;
+#[macro_use]
+extern crate thiserror;
 
 mod cli_args;
 mod date_serializer;
@@ -19,6 +21,7 @@ use crate::sunspec_poll::poll_loop;
 use clap::Parser;
 use config::Config;
 use console_subscriber;
+use futures::{FutureExt, TryFutureExt};
 use lazy_static::lazy_static;
 use std::collections::VecDeque;
 use std::process;
@@ -26,13 +29,26 @@ use std::sync::Arc;
 use std::time::Duration;
 use sunspec_unit::SunSpecUnit;
 use tokio::sync::{mpsc, Mutex, RwLock};
+use tokio::task::JoinSet;
 use tokio::time::{sleep, timeout};
 use tracing_log::AsTrace;
 use tracing_subscriber::prelude::*;
 
 const MPSC_BUFFER_SIZE: usize = 100_usize;
 
+#[derive(Error, Debug, Default)]
+pub enum GatewayError {
+    #[error("Communication Error: {0}")]
+    CommunicationError(String),
+    #[error("Error from thread: {0}")]
+    Error(String),
+    #[error("Unspecified error")]
+    #[default]
+    Unspecified,
+}
+
 lazy_static! {
+    static ref TASK_PILE: RwLock<JoinSet<Result<(),GatewayError>>> = RwLock::new(JoinSet::<Result<(),GatewayError>>::new());
     //region create SETTINGS static object
     static ref SETTINGS: RwLock<Config> = RwLock::new({
         let cfg_file = match std::env::var("CONFIG_FILE_PATH") {
@@ -79,6 +95,11 @@ async fn main() {
             .init();
     } else {
         tracing_subscriber::fmt()
+            .event_format(
+                tracing_subscriber::fmt::format()
+                    .with_file(true)
+                    .with_line_number(true),
+            )
             .with_max_level(cli.verbose.log_level_filter().as_trace())
             .init();
     }
@@ -154,16 +175,18 @@ async fn main() {
     //endregion
 
     //region create sunspec thread workers
-    let mut tasks = vec![];
     for d in devices {
+        let mut tasks = TASK_PILE.write().await;
         let tx = tx.clone();
-        tasks.push(tokio::task::spawn(async move {
+        tasks.spawn(async move {
             match poll_loop(&d, tx).await {
-                Ok(_) => info!("poll_loop exited ok."),
-                Err(e) => die(&format!("poll died: {e}")),
-            };
-        }));
+                Ok(_) => Ok(()),
+                Err(e) => Err(e),
+            }
+        });
     }
+    // drop write mutex on tasks
+
     //endregion
 
     //region watch the mpsc tasks receive loop
@@ -178,6 +201,25 @@ async fn main() {
                 }
                 IPCMessage::Error(e) => {
                     die(&format!("serial_number={}: {}", e.serial_number, e.msg));
+                }
+                IPCMessage::PleaseReconnect(addr, slave) => {
+                    let tx = tx.clone();
+                    let ssu = match SunSpecUnit::new(addr.clone(), slave.to_string()).await {
+                        Ok(s) => s,
+                        Err(e) => {
+                            return die(&format!(
+                                "Couldn't create new sunspecunit to replace dead conn: {e}"
+                            ))
+                        }
+                    };
+                    info!("We received a PleaseReconnect message for {addr}/{slave}");
+                    let mut tasks = TASK_PILE.write().await;
+                    tasks.spawn(async move {
+                        match poll_loop(&ssu, tx).await {
+                            Ok(_) => Ok(()),
+                            Err(e) => return Err(e),
+                        }
+                    });
                 }
             },
             None => {
@@ -203,6 +245,40 @@ async fn main() {
                     debug!("Timeout sending a mpsc transmission?: {e}");
                 }
             }
+        }
+
+        // check cleanups
+
+        let mut tasks = TASK_PILE.write().await;
+        match tasks.join_next().now_or_never() {
+            Some(task) => {
+                match task {
+                    Some(t) => {
+                        match t {
+                            Ok(t1) => match t1 {
+                                Ok(_) => {}
+                                Err(e) => {
+                                    error!("{e}");
+                                }
+                            },
+                            Err(e) => {
+                                // TODO: what does Err mean here?
+                                error!("Got an error when checking joinset: {e}");
+                            }
+                        }
+                    }
+                    None => {
+                        // TODO: what does none mean here?
+                    }
+                }
+            }
+            None => {
+                // no tasks waiting to report in
+            }
+        }
+
+        if mqtt_handler.is_finished() {
+            die("MQTT thread exited.");
         }
 
         let _ = sleep(Duration::from_millis(1000));

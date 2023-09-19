@@ -4,7 +4,7 @@ use anyhow::bail;
 use std::collections::HashMap;
 use std::str::FromStr;
 use sunspec_rs::model_data::ModelData;
-use sunspec_rs::sunspec_connection::SunSpecConnection;
+use sunspec_rs::sunspec_connection::{SunSpecConnection, SunSpecPointError};
 use sunspec_rs::sunspec_data::SunSpecData;
 use sunspec_rs::sunspec_models::ValueType;
 
@@ -49,19 +49,14 @@ impl SunSpecUnit {
         };
         let mut device_info = DeviceInfo::default();
 
-        if let Some(firmware) = conn.clone().get_point(common.clone(), "Vr").await {
+        if let Ok(firmware) = conn.clone().get_point(common.clone(), "Vr").await {
             if let Some(value) = firmware.value {
                 if let ValueType::String(ver) = value {
                     device_info.sw_version = ver;
                 }
             }
         }
-        let manufacturer: String = match conn
-            .clone()
-            .get_point(common.clone(), "Mn")
-            .await
-            .ok_or(anyhow::anyhow!("Can't get manufacturer"))
-        {
+        let manufacturer: String = match conn.clone().get_point(common.clone(), "Mn").await {
             Ok(p) => {
                 if let ValueType::String(str) = p.value.unwrap() {
                     str
@@ -69,14 +64,11 @@ impl SunSpecUnit {
                     anyhow::bail!("Received a point that wasn't a string for manufacturer.");
                 }
             }
-            Err(e) => anyhow::bail!(e),
+            Err(e) => {
+                anyhow::bail!("fatal error, aborting: {e}")
+            }
         };
-        let serial_number = match conn
-            .clone()
-            .get_point(common.clone(), "SN")
-            .await
-            .ok_or(anyhow::anyhow!("Can't get serial number"))
-        {
+        let serial_number = match conn.clone().get_point(common.clone(), "SN").await {
             Ok(p) => {
                 if let ValueType::String(str) = p.value.unwrap() {
                     str
@@ -86,12 +78,7 @@ impl SunSpecUnit {
             }
             Err(e) => anyhow::bail!(e),
         };
-        let physical_model = match conn
-            .clone()
-            .get_point(common.clone(), "Md")
-            .await
-            .ok_or(anyhow::anyhow!("Can't get model name"))
-        {
+        let physical_model = match conn.clone().get_point(common.clone(), "Md").await {
             Ok(p) => {
                 if let ValueType::String(str) = p.value.unwrap() {
                     str
