@@ -2,18 +2,17 @@ use crate::ipc::{
     HAConfigPayload, IPCMessage, Payload, PayloadValueType, PublishMessage, StatePayload,
 };
 use crate::monitored_point::MonitoredPoint;
+use crate::payload::generate_payloads;
 use crate::sunspec_unit::SunSpecUnit;
 use crate::{GatewayError, SETTINGS};
 use chrono::Utc;
 use rand::{thread_rng, Rng};
 use sunspec_rs::sunspec_connection::SunSpecPointError;
-use sunspec_rs::sunspec_models::ValueType;
+use sunspec_rs::sunspec_models::{Access, ValueType};
 use tokio::sync::mpsc::Sender;
 use tokio::time::{sleep, Duration, Instant};
 
 const MINIMUM_POLL_INTERVAL_SECS: u16 = 5_u16;
-
-const DEFAULT_DISPLAY_PRECISION: Option<u8> = Some(4_u8);
 
 pub async fn poll_loop(unit: &SunSpecUnit, tx: Sender<IPCMessage>) -> Result<(), GatewayError> {
     let sn = &unit.serial_number;
@@ -80,6 +79,22 @@ pub async fn poll_loop(unit: &SunSpecUnit, tx: Sender<IPCMessage>) -> Result<(),
                     }
                 },
             };
+            let readwrite = match map.get("readwrite") {
+                None => Access::ReadOnly,
+                Some(v) => match v.clone().into_bool() {
+                    Ok(b) => {
+                        if b {
+                            Access::ReadWrite
+                        } else {
+                            Access::ReadOnly
+                        }
+                    }
+                    Err(e) => {
+                        error!("readwrite value in config file isn't true or false, assuming Read-Only for safety");
+                        Access::ReadOnly
+                    }
+                },
+            };
             match MonitoredPoint::new(
                 id.to_string(),
                 point.clone(),
@@ -89,6 +104,7 @@ pub async fn poll_loop(unit: &SunSpecUnit, tx: Sender<IPCMessage>) -> Result<(),
                 precision,
                 uom,
                 homeassistant,
+                readwrite,
             ) {
                 Ok(p) => points.push(p),
                 Err(e) => {
@@ -150,72 +166,15 @@ pub async fn poll_loop(unit: &SunSpecUnit, tx: Sender<IPCMessage>) -> Result<(),
                         }
                     }
                 }
-                Ok(v) => match v.value {
+                Ok(recvd_point) => match recvd_point.clone().value {
                     None => {}
                     Some(val) => {
                         let state_topic = format!("sunspec_gateway/{sn}/{model}/{point_name}");
                         let config_topic =
                             format!("homeassistant/sensor/{sn}/{model}_{point_name}/config");
-                        let mut config_payload: HAConfigPayload = HAConfigPayload::default();
-                        let mut state_payload: StatePayload = StatePayload::default();
-                        config_payload.name = format!("{sn}: {model}-{point_name}");
-                        config_payload.state_topic = state_topic.clone();
-                        config_payload.device_class = p.device_class.clone();
-                        config_payload.state_class = p.state_class.clone();
-                        config_payload.expires_after = 300;
-                        config_payload.value_template = Some("{{ value_json.value }}".to_string());
-                        config_payload.unique_id = format!("{sn}.{}.{point_name}", p.model);
-                        config_payload.entity_id = format!("sensor.{sn}_{}_{point_name}", p.model);
-                        match val {
-                            ValueType::String(str) => {
-                                debug!("Response for {model}/{point_name}: {str}");
-                                state_payload.value = PayloadValueType::String(str)
-                            }
-                            ValueType::Integer(int) => {
-                                debug!("Response for {model}/{point_name}: {int}");
-                                if p.uom.is_some() {
-                                    // we are overriding the default uom from config
-                                    config_payload.native_uom = p.uom.clone();
-                                } else {
-                                    config_payload.native_uom = v.units.clone();
-                                }
-                                state_payload.value = PayloadValueType::Int(int as i64)
-                            }
-                            ValueType::Float(float) => {
-                                debug!("Response for {model}/{point_name}: {0:.1}", float);
-                                if p.precision.is_some() {
-                                    config_payload.suggested_display_precision = p.precision;
-                                } else {
-                                    config_payload.suggested_display_precision =
-                                        DEFAULT_DISPLAY_PRECISION;
-                                };
-                                if p.uom.is_some() {
-                                    // we are overriding the default uom from config
-                                    config_payload.native_uom = p.uom.clone();
-                                } else {
-                                    config_payload.native_uom = v.units.clone();
-                                }
-                                state_payload.value = PayloadValueType::Float(float as f64);
-                                if let Some(literal) = v.literal {
-                                    if literal.label.is_some() {
-                                        config_payload.name = literal.label.clone().unwrap();
-                                    }
-                                    state_payload.label = literal.label;
-                                    state_payload.description = literal.description;
-                                    state_payload.notes = literal.notes;
-                                }
-                            }
-                            ValueType::Boolean(boolean) => {
-                                debug!("Response for {model}/{point_name}: {boolean}");
-                                state_payload.value = PayloadValueType::String(boolean.to_string());
-                            }
-                            ValueType::Array(vec) => {
-                                debug!("Response for {model}/{point_name}: {:#?}", vec);
-                                let concat = vec.join(",");
-                                state_payload.value = PayloadValueType::String(concat)
-                            }
-                        }
-                        config_payload.device = unit.device_info.clone();
+                        let v = recvd_point.clone();
+                        let (config_payload, state_payload) =
+                            generate_payloads(unit, &recvd_point, &p, &val);
                         if p.homeassistant_discovery {
                             let _ = tx
                                 .send(IPCMessage::Outbound(PublishMessage {
@@ -224,6 +183,7 @@ pub async fn poll_loop(unit: &SunSpecUnit, tx: Sender<IPCMessage>) -> Result<(),
                                 }))
                                 .await;
                         }
+
                         let _ = tx
                             .send(IPCMessage::Outbound(PublishMessage {
                                 topic: state_topic,

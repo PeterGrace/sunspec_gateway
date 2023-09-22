@@ -10,6 +10,8 @@ mod ipc;
 mod monitored_point;
 mod mqtt_connection;
 mod mqtt_poll;
+mod payload;
+mod state_mgmt;
 mod sunspec_poll;
 mod sunspec_unit;
 
@@ -23,6 +25,13 @@ use config::Config;
 use console_subscriber;
 use futures::{FutureExt, TryFutureExt};
 use lazy_static::lazy_static;
+use opentelemetry::global;
+use opentelemetry::sdk::propagation::TraceContextPropagator;
+use opentelemetry::sdk::trace::Tracer;
+use opentelemetry::sdk::{trace, Resource};
+use opentelemetry::KeyValue;
+use opentelemetry_otlp::WithExportConfig;
+use serde::Deserialize;
 use std::collections::VecDeque;
 use std::process;
 use std::sync::Arc;
@@ -32,9 +41,16 @@ use tokio::sync::{mpsc, Mutex, RwLock};
 use tokio::task::JoinSet;
 use tokio::time::{sleep, timeout};
 use tracing_log::AsTrace;
-use tracing_subscriber::prelude::*;
+use tracing_opentelemetry::OpenTelemetryLayer;
+use tracing_subscriber::{prelude::*, EnvFilter, Layer, Registry};
 
 const MPSC_BUFFER_SIZE: usize = 100_usize;
+
+#[derive(Deserialize)]
+pub struct TracingConfig {
+    url: String,
+    sample_rate: f32,
+}
 
 #[derive(Error, Debug, Default)]
 pub enum GatewayError {
@@ -83,31 +99,40 @@ pub fn die(msg: &str) {
 #[tokio::main]
 async fn main() {
     //region initialize app and logging
-    let cli = CliArgs::parse();
+    //let cli = CliArgs::parse();
+    let config = SETTINGS.read().await;
+
+    let tracing_config: Option<TracingConfig> = config.get::<TracingConfig>("tracing").ok();
     let (tx, mut rx) = mpsc::channel(MPSC_BUFFER_SIZE);
     let (mqtt_tx, mut mqtt_rx) = mpsc::channel(MPSC_BUFFER_SIZE);
 
-    if Some(true) == cli.ttrace {
-        let console_layer = console_subscriber::spawn();
-        tracing_subscriber::registry()
-            .with(console_layer)
-            .with(tracing_subscriber::fmt::layer().with_level(true))
-            .init();
+    global::set_text_map_propagator(TraceContextPropagator::new());
+    let console_layer = console_subscriber::spawn();
+    let env_filter = EnvFilter::try_from_default_env().unwrap_or(EnvFilter::new("INFO"));
+    let format_layer = tracing_subscriber::fmt::layer().event_format(
+        tracing_subscriber::fmt::format()
+            .with_file(true)
+            .with_line_number(true),
+    );
+    let mut subscriber = Registry::default()
+        .with(console_layer)
+        .with(env_filter)
+        .with(format_layer);
+
+    let tracer_layer = if tracing_config.is_some() {
+        let t = tracing_config.unwrap();
+        Some(tracing_opentelemetry::layer().with_tracer(make_tracer(t.url, t.sample_rate)))
     } else {
-        tracing_subscriber::fmt()
-            .event_format(
-                tracing_subscriber::fmt::format()
-                    .with_file(true)
-                    .with_line_number(true),
-            )
-            .with_max_level(cli.verbose.log_level_filter().as_trace())
-            .init();
-    }
+        None
+    };
+
+    let subscriber = subscriber.with(tracer_layer);
+    tracing::subscriber::set_global_default(subscriber)
+        .expect("Can't set global subscriber for logging.");
 
     //endregion
 
     //region get config and load in sunspec unit defs
-    let config = SETTINGS.read().await;
     let units = match config.get_array("units") {
         Ok(u) => u,
         Err(e) => {
@@ -129,7 +154,9 @@ async fn main() {
         config.get_int("mqtt_port").unwrap_or(1883) as u16,
         config.get_string("mqtt_username").ok(),
         config.get_string("mqtt_password").ok(),
-    ) {
+    )
+    .await
+    {
         Ok(m) => m,
         Err(e) => {
             return die("Couldn't create mqtt connection object: {e}");
@@ -209,7 +236,7 @@ async fn main() {
                         Err(e) => {
                             return die(&format!(
                                 "Couldn't create new sunspecunit to replace dead conn: {e}"
-                            ))
+                            ));
                         }
                     };
                     info!("We received a PleaseReconnect message for {addr}/{slave}");
@@ -284,4 +311,22 @@ async fn main() {
         let _ = sleep(Duration::from_millis(1000));
     }
     //endregion
+}
+
+pub fn make_tracer(url: String, sample: f32) -> Tracer {
+    let exporter = opentelemetry_otlp::new_exporter().http().with_endpoint(url);
+    let otlp_tracer = opentelemetry_otlp::new_pipeline()
+        .tracing()
+        .with_exporter(exporter)
+        .with_trace_config(
+            trace::config()
+                .with_resource(Resource::new(vec![KeyValue::new(
+                    opentelemetry_semantic_conventions::resource::SERVICE_NAME,
+                    "sunspec_gateway",
+                )]))
+                .with_sampler(opentelemetry::sdk::trace::Sampler::TraceIdRatioBased(1.0)),
+        )
+        .install_batch(opentelemetry::runtime::Tokio)
+        .expect("Can't create tracer");
+    otlp_tracer
 }

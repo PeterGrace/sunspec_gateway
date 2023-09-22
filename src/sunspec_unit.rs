@@ -29,7 +29,7 @@ impl SunSpecUnit {
                 bail!("Couldn't parse slave_id {slave_id}: {e}");
             }
         };
-        let mut conn = match SunSpecConnection::new(addr.clone(), Some(sid)).await {
+        let mut conn = match SunSpecConnection::new(addr.clone(), Some(sid), false).await {
             Ok(c) => c,
             Err(e) => {
                 bail!("Couldn't create connection to {addr} - {sid}: {e}");

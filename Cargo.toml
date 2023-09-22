@@ -32,3 +32,8 @@ chrono = "0.4.28"
 rand = "0.8.5"
 crossterm = "0.27.0"
 thiserror = "1.0.48"
+sqlx = {version = "0.7.1", features = ["sqlite", "runtime-tokio-rustls"]}
+opentelemetry = {version="0.20.0",features = ["trace", "rt-tokio", "metrics", "logs_level_enabled"]}
+tracing-opentelemetry = "0.21.0"
+opentelemetry-otlp = {version="0.13.0", features=["http-proto","reqwest-rustls","reqwest-client"]}
+opentelemetry-semantic-conventions = "0.12.0"

@@ -1,8 +1,11 @@
 ---
-mqtt_server_addr: "10.174.2.40"
+mqtt_server_addr: "dell-r720.g2.gfpd.us"
 mqtt_server_port: 1883
-mqtt_username: "pwrcell_rs"
-mqtt_password: "pwrcell_rs"
+#mqtt_username: "pwrcell_rs"
+#mqtt_password: "pwrcell_rs"
+# tracing:
+#  url: http://10.174.0.0:4318/v1/traces
+#  sample_rate: 0.2
 units:
   - addr: "127.0.0.1:5083"
     slaves: [3,4,5,6,8,9,10,11]
@@ -51,6 +54,7 @@ models:
     - point: "WH"
       interval: 60
       device_class: "energy"
+      state_class: "total_increasing"
       precision: 1
     - point: "DCV"
       interval: 60
@@ -97,6 +101,7 @@ models:
     - point: "DCWh"
       interval: 60
       device_class: "energy"
+      state_class: "total_increasing"
       precision: 1
     - point: "DCV"
       interval: 60
@@ -175,11 +180,13 @@ models:
     - point: "Whx"
       interval: 15
       device_class: "energy"
+      state_class: "total_increasing"
       precision: 1
     - point: "Whin"
       interval: 15
       device_class: "energy"
       precision: 1
+      state_class: "total_increasing"
   "64207":
     - point: "St"
       interval: 30
@@ -191,6 +198,7 @@ models:
     - point: "E"
       interval: 15
       device_class: "energy"
+      state_class: "total_increasing"
       precision: 1
     - point: "I"
       interval: 15
@@ -276,11 +284,13 @@ models:
       device_class: "current"
       state_class: "measurement"
       precision: 1
+      uom: "A"
     - point: "Vin"
       interval: 15
       device_class: "voltage"
       state_class: "measurement"
       precision: 1
+      uom: "V"
   "64263":
     - point: "Enable"
       interval: 60
@@ -304,11 +314,13 @@ models:
       device_class: "voltage"
       state_class: "measurement"
       precision: 1
+      uom: "V"
     - point: "VocCompensated"
       interval: 300
       device_class: "voltage"
       state_class: "measurement"
       precision: 1
+      uom: "V"
     - point: "TimesCountResultWasSuccess"
       interval: 300
       state_class: "total_increasing"

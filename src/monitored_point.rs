@@ -1,4 +1,5 @@
 use chrono::{DateTime, Utc};
+use sunspec_rs::sunspec_models::Access;
 
 // we won't let points get checked faster than every 10 seconds.
 // if we change this, the modbus could get saturated very quickly
@@ -15,6 +16,7 @@ pub struct MonitoredPoint {
     pub precision: Option<u8>,
     pub last_report: DateTime<Utc>,
     pub homeassistant_discovery: bool,
+    pub write_mode: Access,
 }
 
 impl MonitoredPoint {
@@ -26,7 +28,8 @@ impl MonitoredPoint {
         state_class: Option<String>,
         precision: Option<u8>,
         uom: Option<String>,
-        homeassistant: bool,
+        homeassistant_discovery: bool,
+        write_mode: Access,
     ) -> anyhow::Result<Self> {
         debug!("Creating a monitoredpoint for {model}/{name}");
 
@@ -46,7 +49,8 @@ impl MonitoredPoint {
             uom,
             precision,
             last_report: Utc::now(),
-            homeassistant_discovery: homeassistant,
+            homeassistant_discovery,
+            write_mode,
         })
     }
 }

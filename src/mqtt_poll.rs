@@ -2,6 +2,7 @@ use crate::ipc::IPCMessage;
 use crate::mqtt_connection::MqttConnection;
 use rumqttc::{ClientError, ConnectionError, Event, Incoming, Outgoing, QoS};
 use std::future::Future;
+use std::ops::Deref;
 use std::task::{Context, Poll};
 use std::time::Duration;
 use tokio::sync::mpsc::error::TryRecvError;
@@ -39,6 +40,7 @@ pub async fn mqtt_poll_loop(mqtt: MqttConnection, mut rx: Receiver<IPCMessage>) 
                         Incoming::PingResp => {
                             trace!("Recv MQTT PONG");
                         }
+                        Incoming::SubAck(_) => {}
                         _ => {
                             info!("mqtt incoming packet: {:#?}", i);
                         }
@@ -51,6 +53,7 @@ pub async fn mqtt_poll_loop(mqtt: MqttConnection, mut rx: Receiver<IPCMessage>) 
                     Outgoing::Publish(pb) => {
                         dlq.push(pb);
                     }
+                    Outgoing::Subscribe(_) => {}
                     _ => {
                         info!("outgoing mqtt packet: {:#?}", o);
                     }
