@@ -1,5 +1,5 @@
-use crate::ipc::DeviceInfo;
 use crate::monitored_point::MonitoredPoint;
+use crate::payload::DeviceInfo;
 use anyhow::bail;
 use std::collections::HashMap;
 use std::str::FromStr;

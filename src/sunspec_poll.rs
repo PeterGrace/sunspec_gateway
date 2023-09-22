@@ -1,8 +1,7 @@
-use crate::ipc::{
-    HAConfigPayload, IPCMessage, Payload, PayloadValueType, PublishMessage, StatePayload,
-};
+use crate::ipc::{IPCMessage, PublishMessage};
 use crate::monitored_point::MonitoredPoint;
 use crate::payload::generate_payloads;
+use crate::payload::{HAConfigPayload, Payload, PayloadValueType, StatePayload};
 use crate::sunspec_unit::SunSpecUnit;
 use crate::{GatewayError, SETTINGS};
 use chrono::Utc;
@@ -169,27 +168,26 @@ pub async fn poll_loop(unit: &SunSpecUnit, tx: Sender<IPCMessage>) -> Result<(),
                 Ok(recvd_point) => match recvd_point.clone().value {
                     None => {}
                     Some(val) => {
-                        let state_topic = format!("sunspec_gateway/{sn}/{model}/{point_name}");
-                        let config_topic =
-                            format!("homeassistant/sensor/{sn}/{model}_{point_name}/config");
                         let v = recvd_point.clone();
-                        let (config_payload, state_payload) =
-                            generate_payloads(unit, &recvd_point, &p, &val);
-                        if p.homeassistant_discovery {
+                        let payloads = generate_payloads(unit, &recvd_point, &p, &val);
+
+                        for payload in payloads {
+                            if p.homeassistant_discovery {
+                                let _ = tx
+                                    .send(IPCMessage::Outbound(PublishMessage {
+                                        topic: payload.config_topic,
+                                        payload: Payload::Config(payload.config),
+                                    }))
+                                    .await;
+                            }
+
                             let _ = tx
                                 .send(IPCMessage::Outbound(PublishMessage {
-                                    topic: config_topic,
-                                    payload: Payload::Config(config_payload),
+                                    topic: payload.state_topic,
+                                    payload: Payload::CurrentState(payload.state),
                                 }))
                                 .await;
                         }
-
-                        let _ = tx
-                            .send(IPCMessage::Outbound(PublishMessage {
-                                topic: state_topic,
-                                payload: Payload::CurrentState(state_payload),
-                            }))
-                            .await;
                         p.last_report = Utc::now();
                     }
                 },

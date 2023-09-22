@@ -16,7 +16,7 @@ mod sunspec_poll;
 mod sunspec_unit;
 
 use crate::cli_args::CliArgs;
-use crate::ipc::{IPCMessage, Payload, PublishMessage};
+use crate::ipc::{IPCMessage, PublishMessage};
 use crate::mqtt_connection::MqttConnection;
 use crate::mqtt_poll::mqtt_poll_loop;
 use crate::sunspec_poll::poll_loop;

@@ -1,8 +1,9 @@
 ---
-mqtt_server_addr: "dell-r720.g2.gfpd.us"
+#mqtt_server_addr: "dell-r720.g2.gfpd.us"
+mqtt_server_addr: "10.174.2.40"
 mqtt_server_port: 1883
-#mqtt_username: "pwrcell_rs"
-#mqtt_password: "pwrcell_rs"
+mqtt_username: "pwrcell_rs"
+mqtt_password: "pwrcell_rs"
 # tracing:
 #  url: http://10.174.0.0:4318/v1/traces
 #  sample_rate: 0.2
