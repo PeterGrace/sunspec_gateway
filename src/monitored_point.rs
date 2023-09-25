@@ -1,4 +1,6 @@
+use crate::config_structs::PointConfig;
 use chrono::{DateTime, Utc};
+use std::ffi::CString;
 use sunspec_rs::sunspec_models::Access;
 
 // we won't let points get checked faster than every 10 seconds.
@@ -7,47 +9,64 @@ const LOWER_LIMIT_INTERVAL: u64 = 10_u64;
 
 #[derive(Debug)]
 pub struct MonitoredPoint {
+    /// model number or name
     pub model: String,
+    /// point name in model (Evt, Status, Ena, V, Mn, etc)
     pub name: String,
+    /// how frequently this point should be measured
     pub interval: u64,
+    /// the device class homeassistant should use (current, voltage, power, energy, etc)
     pub device_class: Option<String>,
+    /// the homeassistant state class (measurement, total_increasing, etc)
     pub state_class: Option<String>,
+    /// The unit of measure to be reported in mqtt packet
     pub uom: Option<String>,
+    /// the digits of precision after the decimal point for measured point
     pub precision: Option<u8>,
+    /// the timestamp of the last report of this modbus Point.
     pub last_report: DateTime<Utc>,
+    /// whether or not to report this datapoint in homeassistant autodiscovery
     pub homeassistant_discovery: bool,
+    /// whether this point is writeable
     pub write_mode: Access,
+    /// The preferred name for the point
+    pub display_name: Option<String>,
 }
 
 impl MonitoredPoint {
-    pub fn new(
-        model: String,
-        name: String,
-        interval: u64,
-        device_class: Option<String>,
-        state_class: Option<String>,
-        precision: Option<u8>,
-        uom: Option<String>,
-        homeassistant_discovery: bool,
-        write_mode: Access,
-    ) -> anyhow::Result<Self> {
-        debug!("Creating a monitoredpoint for {model}/{name}");
+    pub fn new(model: String, pc: PointConfig) -> anyhow::Result<Self> {
+        debug!("Creating a monitoredpoint for {model}/{}", pc.point);
 
         let mut interval_checked: u64 = 0_u64;
-        if interval < LOWER_LIMIT_INTERVAL {
+        if pc.interval < LOWER_LIMIT_INTERVAL {
             interval_checked = LOWER_LIMIT_INTERVAL
         } else {
-            interval_checked = interval
+            interval_checked = pc.interval
         }
+        let write_mode = match pc.readwrite {
+            None => Access::ReadOnly,
+            Some(v) => {
+                if v {
+                    Access::ReadWrite
+                } else {
+                    Access::ReadOnly
+                }
+            }
+        };
+        let homeassistant_discovery = match pc.homeassistant {
+            None => true,
+            Some(v) => v,
+        };
 
         Ok(MonitoredPoint {
             model,
-            name,
+            display_name: pc.display_name,
+            name: pc.point,
             interval: interval_checked,
-            device_class,
-            state_class,
-            uom,
-            precision,
+            device_class: pc.device_class,
+            state_class: pc.state_class,
+            uom: pc.uom,
+            precision: pc.precision,
             last_report: Utc::now(),
             homeassistant_discovery,
             write_mode,

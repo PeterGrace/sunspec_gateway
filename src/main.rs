@@ -5,6 +5,7 @@ extern crate strum;
 extern crate thiserror;
 
 mod cli_args;
+mod config_structs;
 mod date_serializer;
 mod ipc;
 mod monitored_point;
@@ -16,9 +17,12 @@ mod sunspec_poll;
 mod sunspec_unit;
 
 use crate::cli_args::CliArgs;
+use crate::config_structs::GatewayConfig;
+use crate::config_structs::TracingConfig;
 use crate::ipc::{IPCMessage, PublishMessage};
 use crate::mqtt_connection::MqttConnection;
 use crate::mqtt_poll::mqtt_poll_loop;
+use crate::state_mgmt::prepare_to_database;
 use crate::sunspec_poll::poll_loop;
 use clap::Parser;
 use config::Config;
@@ -32,7 +36,9 @@ use opentelemetry::sdk::{trace, Resource};
 use opentelemetry::KeyValue;
 use opentelemetry_otlp::WithExportConfig;
 use serde::Deserialize;
+use sqlx::{Pool, Sqlite};
 use std::collections::VecDeque;
+use std::fs;
 use std::process;
 use std::sync::Arc;
 use std::time::Duration;
@@ -42,15 +48,9 @@ use tokio::task::JoinSet;
 use tokio::time::{sleep, timeout};
 use tracing_log::AsTrace;
 use tracing_opentelemetry::OpenTelemetryLayer;
-use tracing_subscriber::{prelude::*, EnvFilter, Layer, Registry};
+use tracing_subscriber::{filter, prelude::*, EnvFilter, Layer, Registry};
 
 const MPSC_BUFFER_SIZE: usize = 100_usize;
-
-#[derive(Deserialize)]
-pub struct TracingConfig {
-    url: String,
-    sample_rate: f32,
-}
 
 #[derive(Error, Debug, Default)]
 pub enum GatewayError {
@@ -65,34 +65,30 @@ pub enum GatewayError {
 
 lazy_static! {
     static ref TASK_PILE: RwLock<JoinSet<Result<(),GatewayError>>> = RwLock::new(JoinSet::<Result<(),GatewayError>>::new());
+
+
     //region create SETTINGS static object
-    static ref SETTINGS: RwLock<Config> = RwLock::new({
-        let cfg_file = match std::env::var("CONFIG_FILE_PATH") {
-            Ok(s) => s,
-            Err(_e) => { "./config.yaml".to_string()}
+    static ref SETTINGS: RwLock<GatewayConfig> = RwLock::new({
+         let cfg_file = match std::env::var("CONFIG_FILE_PATH") {
+             Ok(s) => s,
+             Err(_e) => { "./config.yaml".to_string()}
+         };
+        let yaml = fs::read_to_string(cfg_file).unwrap_or_else(|e| {
+            die(&format!("Can't read config file: {e}"));
+            String::default()
+            });
+        let gc: GatewayConfig = match serde_yaml::from_str(&yaml)  {
+            Ok(gc) => gc,
+            Err(e) => { die(&format!("Couldn't deserialize GatewayConfig: {e}"));
+            GatewayConfig::default()}
         };
-        let settings = match Config::builder()
-            .add_source(config::File::with_name(&cfg_file))
-            .add_source(
-                config::Environment::with_prefix("SUNSPEC_GATEWAY")
-                .try_parsing(true)
-                .list_separator(",")
-            )
-            .build()
-            {
-                Ok(s) => s,
-                Err(e) => {
-                    error!("{}", e);
-                    process::exit(1);
-                }
-            };
-        settings
+        gc
     });
     //endregion
 }
 
 pub fn die(msg: &str) {
-    error!(msg);
+    println!("{}", msg);
     process::exit(1);
 }
 
@@ -100,14 +96,10 @@ pub fn die(msg: &str) {
 async fn main() {
     //region initialize app and logging
     //let cli = CliArgs::parse();
-    let config = SETTINGS.read().await;
-
-    let tracing_config: Option<TracingConfig> = config.get::<TracingConfig>("tracing").ok();
     let (tx, mut rx) = mpsc::channel(MPSC_BUFFER_SIZE);
     let (mqtt_tx, mut mqtt_rx) = mpsc::channel(MPSC_BUFFER_SIZE);
 
-    global::set_text_map_propagator(TraceContextPropagator::new());
-    let console_layer = console_subscriber::spawn();
+    let console_layer = console_subscriber::spawn().with_filter(filter::filter_fn(|m| true));
     let env_filter = EnvFilter::try_from_default_env().unwrap_or(EnvFilter::new("INFO"));
     let format_layer = tracing_subscriber::fmt::layer().event_format(
         tracing_subscriber::fmt::format()
@@ -119,8 +111,9 @@ async fn main() {
         .with(env_filter)
         .with(format_layer);
 
-    let tracer_layer = if tracing_config.is_some() {
-        let t = tracing_config.unwrap();
+    let config = SETTINGS.read().await;
+    let tracer_layer = if config.tracing.is_some() {
+        let t = config.tracing.clone().unwrap();
         Some(tracing_opentelemetry::layer().with_tracer(make_tracer(t.url, t.sample_rate)))
     } else {
         None
@@ -129,31 +122,26 @@ async fn main() {
     let subscriber = subscriber.with(tracer_layer);
     tracing::subscriber::set_global_default(subscriber)
         .expect("Can't set global subscriber for logging.");
+    global::set_text_map_propagator(TraceContextPropagator::new());
 
     //endregion
 
-    //region get config and load in sunspec unit defs
-    let units = match config.get_array("units") {
-        Ok(u) => u,
-        Err(e) => {
-            error!("unable to get unit definitions from config file: {e}");
-            process::exit(1);
-        }
-    };
+    //region databasey stuff
+    if let Err(e) = prepare_to_database().await {
+        die(&format!("Can't database: {e}"))
+    }
     //endregion
 
     //region create mqtt server connection and spawn mqtt thread
     let mqtt_conn = match MqttConnection::new(
         config
-            .get_string("mqtt_client_id")
+            .mqtt_client_id
+            .clone()
             .unwrap_or("sunspec_gateway".to_string()),
-        config.get_string("mqtt_server_addr").unwrap_or_else(|_| {
-            die("mqtt_server_addr not defined");
-            String::default()
-        }),
-        config.get_int("mqtt_port").unwrap_or(1883) as u16,
-        config.get_string("mqtt_username").ok(),
-        config.get_string("mqtt_password").ok(),
+        config.mqtt_server_addr.clone(),
+        config.mqtt_server_port.unwrap_or(1883),
+        config.mqtt_username.clone(),
+        config.mqtt_password.clone(),
     )
     .await
     {
@@ -168,30 +156,11 @@ async fn main() {
     //endregion
 
     //region populate sunspec devices into an array
+    let units = config.units.clone();
     let mut devices: Vec<SunSpecUnit> = vec![];
     for u in units {
-        let table = u.clone().into_table().unwrap();
-        let v_slaves = table
-            .clone()
-            .get("slaves")
-            .unwrap()
-            .clone()
-            .into_array()
-            .unwrap();
-        for s in v_slaves.iter() {
-            let slave = s.clone().into_uint().unwrap();
-            match SunSpecUnit::new(
-                table
-                    .clone()
-                    .get("addr")
-                    .unwrap()
-                    .to_string()
-                    .parse()
-                    .unwrap(),
-                slave.to_string(),
-            )
-            .await
-            {
+        for s in u.slaves.iter() {
+            match SunSpecUnit::new(u.addr.clone(), s.to_string()).await {
                 Ok(p) => devices.push(p),
                 Err(e) => {
                     die(&format!("Unable to create connection to SunSpec Unit: {e}"));

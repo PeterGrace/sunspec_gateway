@@ -90,8 +90,9 @@ impl SunSpecUnit {
             }
             Err(e) => anyhow::bail!(e),
         };
-        device_info.name = physical_model.clone();
+        device_info.model = physical_model.clone();
         device_info.manufacturer = manufacturer.clone();
+        device_info.name = format!("{serial_number}: {physical_model}");
         device_info.identifiers = vec![serial_number.clone()];
 
         info!("Initialized {manufacturer}/{physical_model} with SN {serial_number}");

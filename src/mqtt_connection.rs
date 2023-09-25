@@ -41,7 +41,6 @@ impl Debug for MyEventLoop {
 }
 
 impl MqttConnection {
-    #[instrument]
     pub async fn new(
         client: String,
         addr: String,

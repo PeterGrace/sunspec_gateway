@@ -1,19 +1,19 @@
 ---
-#mqtt_server_addr: "dell-r720.g2.gfpd.us"
-mqtt_server_addr: "10.174.2.40"
+mqtt_server_addr: "dell-r720.g2.gfpd.us"
+#mqtt_server_addr: "10.174.2.40"
 mqtt_server_port: 1883
-mqtt_username: "pwrcell_rs"
-mqtt_password: "pwrcell_rs"
+#mqtt_username: "pwrcell_rs"
+#mqtt_password: "pwrcell_rs"
 # tracing:
 #  url: http://10.174.0.0:4318/v1/traces
 #  sample_rate: 0.2
 units:
   - addr: "127.0.0.1:5083"
-    slaves: [3,4,5,6,8,9,10,11]
+    slaves: [3, 4, 5, 6, 8, 9, 10, 11]
   - addr: "127.0.0.1:5084"
-    slaves: [3,6,7,8,9]
+    slaves: [3, 6, 7, 8, 9]
   - addr: "127.0.0.1:5085"
-    slaves: [3,5,6,7]
+    slaves: [3, 5, 6, 7]
 models:
   "102":
     - point: "PhVphA"
@@ -50,8 +50,9 @@ models:
       uom: "VAr"
     - point: "PF"
       interval: 15
+      device_class: "power_factor"
       state_class: "measurement"
-      precision: 5
+      precision: 1
     - point: "WH"
       interval: 60
       device_class: "energy"
@@ -88,8 +89,10 @@ models:
       uom: "°C"
     - point: "St"
       interval: 60
+      display_name: "Inverter Status"
     - point: "Evt1"
       interval: 60
+      display_name: "Last Event"
   "404":
     - point: "Evt"
       interval: 30
@@ -140,19 +143,27 @@ models:
       device_class: "power"
       state_class: "measurement"
     - point: "SoC"
+      device_class: "battery"
+      state_class: "measurement"
       interval: 60
       precision: 2
       uom: "%"
     - point: "SoH"
+      device_class: "battery"
+      state_class: "measurement"
       interval: 60
       precision: 2
       uom: "%"
   "804":
     - point: "SoC"
       interval: 60
+      device_class: "battery"
+      state_class: "measurement"
       uom: "%"
     - point: "SoH"
       interval: 60
+      device_class: "battery"
+      state_class: "measurement"
       uom: "%"
     - point: "A"
       interval: 15
@@ -173,34 +184,41 @@ models:
       device_class: "power"
       state_class: "measurement"
       precision: 1
+      display_name: "Power, Phase A"
     - point: "Px2"
       interval: 15
       device_class: "power"
       state_class: "measurement"
       precision: 1
+      display_name: "Power, Phase B"
     - point: "Whx"
       interval: 15
       device_class: "energy"
       state_class: "total_increasing"
+      display_name: "Total Exported Watts"
       precision: 1
     - point: "Whin"
       interval: 15
       device_class: "energy"
       precision: 1
+      display_name: "Total Imported Watts"
       state_class: "total_increasing"
   "64207":
     - point: "St"
+      display_name: "REbus State"
       interval: 30
     - point: "P"
       interval: 15
       device_class: "power"
       state_class: "measurement"
+      display_name: "Power"
       precision: 1
     - point: "E"
       interval: 15
       device_class: "energy"
       state_class: "total_increasing"
       precision: 1
+      display_name: "Total Watt-Hours Produced"
     - point: "I"
       interval: 15
       device_class: "current"
@@ -218,28 +236,34 @@ models:
       precision: 2
       uom: "°C"
     - point: "Ev"
+      display_name: "Last REbus Event"
       interval: 60
     - point: "RB"
       interval: 60
   "64208":
     - point: "SysMd"
       interval: 60
+      display_name: "System Mode"
     - point: "ErrorWord"
       interval: 60
+      display_name: "Last Recorded Error"
     - point: "CTPow"
       interval: 15
       precision: 2
       device_class: "power"
       state_class: "measurement"
+      display_name: "CT Clamp Watts Measurement"
     - point: "WhIn"
       interval: 60
       precision: 0
       device_class: "energy"
+      display_name: "Watt-hours sourced from REbus"
       state_class: "total_increasing"
     - point: "WhOut"
       interval: 60
       precision: 0
       device_class: "energy"
+      display_name: "Watt-hours sinked to REbus"
       state_class: "total_increasing"
     - point: "EnableBits"
       interval: 60
@@ -298,14 +322,16 @@ models:
       readwrite: true
     - point: "PVRSSLockoutError"
       interval: 60
+      display_name: "PVRSS Lockout Status"
     - point: "ClearPVRSSLockoutError"
       interval: 300
       readwrite: true
+      display_name: "Clear PVRSS Lock-Out"
   "64264":
-    - point: "Status"
-      interval: 60
     - point: "SelfTestResults"
       interval: 300
+    - point: "Status"
+      interval: 60
     - point: "InstalledCount"
       interval: 300
     - point: "DetectedCount"

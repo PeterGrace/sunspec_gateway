@@ -1,7 +1,4 @@
-use crate::sunspec_unit::SunSpecUnit;
-
 use crate::payload::Payload;
-use serde::{Deserialize, Serialize};
 
 pub struct PublishMessage {
     pub(crate) topic: String,

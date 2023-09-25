@@ -2,142 +2,78 @@ use crate::ipc::{IPCMessage, PublishMessage};
 use crate::monitored_point::MonitoredPoint;
 use crate::payload::generate_payloads;
 use crate::payload::{HAConfigPayload, Payload, PayloadValueType, StatePayload};
+use crate::state_mgmt::{cull_records_to, write_payload_history};
 use crate::sunspec_unit::SunSpecUnit;
 use crate::{GatewayError, SETTINGS};
 use chrono::Utc;
 use rand::{thread_rng, Rng};
+use sunspec_rs::model_data::ModelData;
 use sunspec_rs::sunspec_connection::SunSpecPointError;
 use sunspec_rs::sunspec_models::{Access, ValueType};
 use tokio::sync::mpsc::Sender;
 use tokio::time::{sleep, Duration, Instant};
 
 const MINIMUM_POLL_INTERVAL_SECS: u16 = 5_u16;
+const CULL_HISTORY_ROWS: u8 = 50_u8;
 
 pub async fn poll_loop(unit: &SunSpecUnit, tx: Sender<IPCMessage>) -> Result<(), GatewayError> {
     let sn = &unit.serial_number;
     let config = SETTINGS.read().await;
     let mut points: Vec<MonitoredPoint> = vec![];
-    let mut point: String = String::default();
-    let mut interval: u64 = 0;
     for (id, _) in unit.conn.models.iter() {
         let mname = format!("{id}");
-        let models_table = config.get_table("models").unwrap();
-
-        let modelpoints = match models_table.get(&mname) {
-            Some(m) => match m.clone().into_array() {
-                Ok(pointarray) => pointarray,
-                Err(e) => {
-                    error!("configuration issue with models array in config.yaml");
-                    continue;
-                }
-            },
-            None => {
-                debug!(%sn, "Can't find any model points defined for models.{id} in config.");
-                continue;
+        for (model, config_points) in config.models.iter() {
+            for point in config_points {
+                match MonitoredPoint::new(model.clone(), point.clone()) {
+                    Ok(p) => points.push(p),
+                    Err(e) => {
+                        warn!(%sn, "unable to create MonitoredPoint for {id}/{}: {e}", point.point);
+                        continue;
+                    }
+                };
             }
-        };
-        for pointname in modelpoints.iter() {
-            let map = pointname.clone().into_table().unwrap();
-            let point = match map.get("point") {
-                Some(p) => p.clone().into_string().unwrap(),
-                None => {
-                    warn!(%sn, "model {id} missing point def in config, skipping point");
-                    continue;
-                }
-            };
-            let interval = match map.get("interval") {
-                Some(i) => i.clone().into_uint().unwrap(),
-                None => {
-                    warn!(%sn, "model {id} missing interval def in config, skipping point");
-                    continue;
-                }
-            };
-            let device_class = match map.get("device_class") {
-                None => None,
-                Some(v) => Some(v.clone().into_string().unwrap()),
-            };
-            let state_class = match map.get("state_class") {
-                None => None,
-                Some(v) => Some(v.clone().into_string().unwrap()),
-            };
-            let uom = match map.get("uom") {
-                None => None,
-                Some(v) => Some(v.clone().into_string().unwrap()),
-            };
-            let precision = match map.get("precision") {
-                None => None,
-                Some(v) => Some(v.clone().into_uint().unwrap() as u8),
-            };
-            let homeassistant = match map.get("homeassistant") {
-                None => true,
-                Some(v) => match v.clone().into_bool() {
-                    Ok(b) => b,
-                    Err(e) => {
-                        error!("homeassistant value in config file isn't true or false, assuming false for safety");
-                        false
-                    }
-                },
-            };
-            let readwrite = match map.get("readwrite") {
-                None => Access::ReadOnly,
-                Some(v) => match v.clone().into_bool() {
-                    Ok(b) => {
-                        if b {
-                            Access::ReadWrite
-                        } else {
-                            Access::ReadOnly
-                        }
-                    }
-                    Err(e) => {
-                        error!("readwrite value in config file isn't true or false, assuming Read-Only for safety");
-                        Access::ReadOnly
-                    }
-                },
-            };
-            match MonitoredPoint::new(
-                id.to_string(),
-                point.clone(),
-                interval,
-                device_class,
-                state_class,
-                precision,
-                uom,
-                homeassistant,
-                readwrite,
-            ) {
-                Ok(p) => points.push(p),
-                Err(e) => {
-                    warn!(%sn, "unable to create MonitoredPoint for {id}/{point}: {e}");
-                    continue;
-                }
-            };
         }
-    }
+    } // at this point, `points` should contain all points we've been asked to check.
+
     // since we're done reading config file variables, lets drop the RwLock.
     drop(config);
 
     loop {
-        for p in points.iter_mut() {
-            let interval = p.interval as i64;
+        // p is each point we've been asked to check.
+        for requested_point_to_check in points.iter_mut() {
+            let md = match unit
+                .conn
+                .models
+                .get(&requested_point_to_check.model.parse::<u16>().unwrap())
+            {
+                Some(model) => Some(model),
+                None => {
+                    // the unit we're watching doesn't have this point in its system table
+                    continue;
+                }
+            };
+            let interval = requested_point_to_check.interval as i64;
             let time_pad = thread_rng().gen_range(0..interval) as i64;
-            let model = p.model.clone();
-            let point_name = p.name.clone();
-            if Utc::now().timestamp() - p.last_report.timestamp() < (interval + time_pad) {
+            let model = requested_point_to_check.model.clone();
+            let point_name = requested_point_to_check.name.clone();
+            if Utc::now().timestamp() - requested_point_to_check.last_report.timestamp()
+                < (interval + time_pad)
+            {
                 continue;
             } else {
-                if Utc::now().timestamp() - p.last_report.timestamp() > 1800 {
+                if Utc::now().timestamp() - requested_point_to_check.last_report.timestamp() > 1800
+                {
                     warn!("point {model}/{point_name} hasn't been updated in over 30 minutes.");
                 }
             }
+            debug!(%sn, "Checking point {model}/{point_name}");
 
-            debug!("Checking point {model}/{point_name}");
-
-            let md = unit
+            match unit
                 .conn
-                .models
-                .get(&p.model.parse::<u16>().unwrap())
-                .unwrap();
-            match unit.conn.clone().get_point(md.clone(), &p.name).await {
+                .clone()
+                .get_point(md.unwrap().clone(), &requested_point_to_check.name)
+                .await
+            {
                 Err(e) => {
                     match e {
                         SunSpecPointError::GeneralError(e) => {
@@ -169,14 +105,16 @@ pub async fn poll_loop(unit: &SunSpecUnit, tx: Sender<IPCMessage>) -> Result<(),
                     None => {}
                     Some(val) => {
                         let v = recvd_point.clone();
-                        let payloads = generate_payloads(unit, &recvd_point, &p, &val);
+                        let payloads =
+                            generate_payloads(unit, &recvd_point, &requested_point_to_check, &val)
+                                .await;
 
                         for payload in payloads {
-                            if p.homeassistant_discovery {
+                            if requested_point_to_check.homeassistant_discovery {
                                 let _ = tx
                                     .send(IPCMessage::Outbound(PublishMessage {
                                         topic: payload.config_topic,
-                                        payload: Payload::Config(payload.config),
+                                        payload: Payload::Config(payload.config.clone()),
                                     }))
                                     .await;
                             }
@@ -184,11 +122,22 @@ pub async fn poll_loop(unit: &SunSpecUnit, tx: Sender<IPCMessage>) -> Result<(),
                             let _ = tx
                                 .send(IPCMessage::Outbound(PublishMessage {
                                     topic: payload.state_topic,
-                                    payload: Payload::CurrentState(payload.state),
+                                    payload: Payload::CurrentState(payload.state.clone()),
                                 }))
                                 .await;
+                            if let Err(e) =
+                                cull_records_to(payload.config.clone().unique_id, CULL_HISTORY_ROWS)
+                                    .await
+                            {
+                                warn!("Couldn't cull history for this point: {e}");
+                            };
+                            if let Err(e) =
+                                write_payload_history(payload.config, payload.state).await
+                            {
+                                warn!("Unable to store value in db: {e}");
+                            }
                         }
-                        p.last_report = Utc::now();
+                        requested_point_to_check.last_report = Utc::now();
                     }
                 },
             }
