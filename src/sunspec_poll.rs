@@ -5,8 +5,9 @@ use crate::payload::{HAConfigPayload, Payload, PayloadValueType, StatePayload};
 use crate::state_mgmt::{cull_records_to, write_payload_history};
 use crate::sunspec_unit::SunSpecUnit;
 use crate::{GatewayError, SETTINGS};
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use rand::{thread_rng, Rng};
+use std::collections::HashMap;
 use sunspec_rs::model_data::ModelData;
 use sunspec_rs::sunspec_connection::SunSpecPointError;
 use sunspec_rs::sunspec_models::{Access, ValueType};
@@ -17,9 +18,11 @@ const MINIMUM_POLL_INTERVAL_SECS: u16 = 5_u16;
 const CULL_HISTORY_ROWS: u8 = 50_u8;
 
 pub async fn poll_loop(unit: &SunSpecUnit, tx: Sender<IPCMessage>) -> Result<(), GatewayError> {
+    let genesis_moment = Utc::now();
     let sn = &unit.serial_number;
     let config = SETTINGS.read().await;
     let mut points: Vec<MonitoredPoint> = vec![];
+    let mut last_report: HashMap<String, DateTime<Utc>> = HashMap::new();
     for (id, _) in unit.conn.models.iter() {
         let mname = format!("{id}");
         for (model, config_points) in config.models.iter() {
@@ -39,13 +42,13 @@ pub async fn poll_loop(unit: &SunSpecUnit, tx: Sender<IPCMessage>) -> Result<(),
     drop(config);
 
     loop {
-        // p is each point we've been asked to check.
         for requested_point_to_check in points.iter_mut() {
             //region assign variables
             let interval = requested_point_to_check.interval as i64;
             let time_pad = thread_rng().gen_range(0..interval) as i64;
             let model = requested_point_to_check.model.clone();
             let point_name = requested_point_to_check.name.clone();
+            let uniqueid = format!("{sn}.{model}.{point_name}");
             let log_prefix = format!(
                 "[{}:{} {sn} {model}/{point_name}]",
                 unit.addr, unit.slave_id
@@ -65,19 +68,19 @@ pub async fn poll_loop(unit: &SunSpecUnit, tx: Sender<IPCMessage>) -> Result<(),
                 }
             };
             //endregion
-
+            let now_stamp = Utc::now().timestamp();
+            let last_stamp = last_report
+                .get(&uniqueid)
+                .unwrap_or(&genesis_moment)
+                .timestamp();
             //region check if it is time to send a datapoint / report on point being stale
-            if Utc::now().timestamp() - requested_point_to_check.last_report.timestamp()
-                < (interval + time_pad)
-            {
+            if (now_stamp - last_stamp) < (interval + time_pad) {
                 continue;
             } else {
-                if Utc::now().timestamp() - requested_point_to_check.last_report.timestamp() > 1800
-                {
+                if (now_stamp - last_stamp) > 1800 {
                     warn!(
                         "{log_prefix}: point hasn't been updated in over 30 minutes {} | {} .",
-                        Utc::now().timestamp(),
-                        requested_point_to_check.last_report.timestamp()
+                        now_stamp, last_stamp
                     );
                 }
             }
@@ -129,7 +132,7 @@ pub async fn poll_loop(unit: &SunSpecUnit, tx: Sender<IPCMessage>) -> Result<(),
                             generate_payloads(unit, &recvd_point, &requested_point_to_check, &val)
                                 .await;
 
-                        requested_point_to_check.last_report = Utc::now();
+                        last_report.insert(uniqueid, Utc::now());
                         for payload in payloads {
                             if requested_point_to_check.homeassistant_discovery {
                                 let _ = tx

@@ -47,7 +47,7 @@ models:
       device_class: "reactive_power"
       state_class: "measurement"
       precision: 1
-      uom: "VAr"
+      uom: "var"
     - point: "PF"
       interval: 15
       device_class: "power_factor"
@@ -308,6 +308,11 @@ models:
     - point: "Ena"
       interval: 30
       readwrite: true
+      inputs:
+        switch:
+          on: ENABLE
+          off: DISABLE
+      display_name: "Unit Enable"
     - point: "ErrorWord"
       interval: 30
     - point: "EnableBits"
@@ -330,6 +335,11 @@ models:
     - point: "Enable"
       interval: 60
       readwrite: true
+      inputs:
+        switch:
+          on: ENABLED
+          off: DISABLED
+      display_name: "Unit Enable (PVRSS)"
     - point: "PVRSSLockoutError"
       interval: 60
       display_name: "PVRSS Lockout Status"

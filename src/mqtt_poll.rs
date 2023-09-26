@@ -1,9 +1,7 @@
 use crate::ipc::IPCMessage;
 use crate::mqtt_connection::MqttConnection;
-use rumqttc::{ClientError, ConnectionError, Event, Incoming, Outgoing, QoS};
+use rumqttc::{Event, Incoming, Outgoing, QoS};
 use std::future::Future;
-use std::ops::Deref;
-use std::task::{Context, Poll};
 use std::time::Duration;
 use tokio::sync::mpsc::error::TryRecvError;
 use tokio::sync::mpsc::{Receiver, Sender};

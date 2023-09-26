@@ -25,7 +25,7 @@ futures = "0.3.28"
 rumqttc = "0.22.0"
 serde = {version="1.0.185", features=["derive"]}
 serde_json = "1.0.105"
-serde_yaml = "0.9.25"
+serde_yaml = "=0.8.26"
 #sunspec_rs = "0.3.1"
 sunspec_rs = {path = "/home/pgrace/repos/sunspec_rs"}
 console-subscriber = "0.1.10"

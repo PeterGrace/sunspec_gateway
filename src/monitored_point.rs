@@ -23,8 +23,6 @@ pub struct MonitoredPoint {
     pub uom: Option<String>,
     /// the digits of precision after the decimal point for measured point
     pub precision: Option<u8>,
-    /// the timestamp of the last report of this modbus Point.
-    pub last_report: DateTime<Utc>,
     /// whether or not to report this datapoint in homeassistant autodiscovery
     pub homeassistant_discovery: bool,
     /// whether this point is writeable
@@ -71,7 +69,6 @@ impl MonitoredPoint {
             state_class: pc.state_class,
             uom: pc.uom,
             precision: pc.precision,
-            last_report: Utc::now(),
             homeassistant_discovery,
             write_mode,
             scale_factor: pc.scale_factor,

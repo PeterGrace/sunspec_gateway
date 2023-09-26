@@ -92,6 +92,8 @@ pub struct HAConfigPayload {
     pub should_poll: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub translation_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub payload_press: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -136,6 +138,10 @@ pub async fn generate_payloads(
     let sn = unit.serial_number.clone();
     let model = monitored_point.model.clone();
     let point_name = monitored_point.name.clone();
+    let log_prefix = format!(
+        "[{}:{} {sn} {model}/{point_name}]",
+        unit.addr, unit.slave_id
+    );
     let mut config_payload: HAConfigPayload = HAConfigPayload::default();
     let mut state_payload: StatePayload = StatePayload::default();
     if let Some(display_name) = monitored_point.display_name.clone() {
@@ -254,7 +260,10 @@ pub async fn generate_payloads(
             match check_needs_adjust(updated_uniques).await {
                 Ok(stale) => {
                     if stale.len() > 0 {
-                        info!("sending off for {} binary sensors", stale.len());
+                        info!(
+                            "{log_prefix}: sending off for {} binary sensors",
+                            stale.len()
+                        );
                     }
                     for stale_unique in stale {
                         let mut splitval = stale_unique.splitn(4, ".");
@@ -305,11 +314,32 @@ pub async fn generate_payloads(
     if matches!(monitored_point.write_mode, Access::ReadWrite) {
         config_payload.command_topic =
             Some(format!("sunspec_gateway/input/{sn}/{model}/{point_name}"));
-        if let Some(InputType::Select(options)) = &monitored_point.input_type {
-            config_payload.options = Some(options.to_vec());
-            config_payload.entity_category = Some(EntityCategory::Config);
-            config_payload.entity_id = format!("select.{sn}_{model}_{point_name}");
-            config_topic = format!("homeassistant/select/{sn}/{model}_{point_name}/config");
+        match &monitored_point.input_type {
+            Some(input) => match input {
+                InputType::Select(options) => {
+                    config_payload.options = Some(options.to_vec());
+                    config_payload.entity_category = Some(EntityCategory::Config);
+                    config_payload.entity_id = format!("select.{sn}_{model}_{point_name}");
+                    config_topic = format!("homeassistant/select/{sn}/{model}_{point_name}/config");
+                }
+                InputType::Switch(switch) => {
+                    let switch = switch.clone();
+                    config_payload.payload_on = Some(switch.on);
+                    config_payload.payload_off = Some(switch.off);
+                    config_payload.entity_category = Some(EntityCategory::Config);
+                    config_payload.entity_id = format!("switch.{sn}_{model}_{point_name}");
+                    config_topic = format!("homeassistant/switch/{sn}/{model}_{point_name}/config");
+                }
+                InputType::Button(button) => {
+                    config_payload.payload_press = Some(button.to_string());
+                    config_payload.entity_category = Some(EntityCategory::Config);
+                    config_payload.entity_id = format!("button.{sn}_{model}_{point_name}");
+                    config_topic = format!("homeassistant/button/{sn}/{model}_{point_name}/config");
+                }
+            },
+            None => {
+                error!("{log_prefix}: readwrite set in config, but no inputs specified.");
+            }
         };
     }
 

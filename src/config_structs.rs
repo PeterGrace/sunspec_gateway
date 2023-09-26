@@ -11,12 +11,17 @@ pub struct UnitConfig {
     pub addr: String,
     pub slaves: Vec<u8>,
 }
+#[derive(Deserialize, Clone, Debug)]
+pub struct Switchable {
+    pub on: String,
+    pub off: String,
+}
 
 #[derive(Deserialize, Clone, Debug)]
 #[serde(rename_all = "lowercase")]
 pub enum InputType {
     Select(Vec<String>),
-    Switch(String),
+    Switch(Switchable),
     Button(String),
 }
 
