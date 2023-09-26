@@ -2513,6 +2513,7 @@ dependencies = [
  "crossterm",
  "futures",
  "lazy_static",
+ "num-traits",
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry-semantic-conventions",

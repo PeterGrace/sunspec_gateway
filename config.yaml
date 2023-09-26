@@ -38,13 +38,13 @@ models:
       precision: 1
     - point: "VA"
       interval: 15
-      device_class: "power"
+      device_class: "apparent_power"
       state_class: "measurement"
       precision: 1
       uom: "VA"
     - point: "VAr"
       interval: 15
-      device_class: "power"
+      device_class: "reactive_power"
       state_class: "measurement"
       precision: 1
       uom: "VAr"
@@ -53,6 +53,7 @@ models:
       device_class: "power_factor"
       state_class: "measurement"
       precision: 1
+      uom: "%"
     - point: "WH"
       interval: 60
       device_class: "energy"
@@ -244,6 +245,15 @@ models:
     - point: "SysMd"
       interval: 60
       display_name: "System Mode"
+      readwrite: true
+      inputs:
+        select:
+          - "GRID_TIE"
+          - "SELF_SUPPLY"
+          - "CLEAN_BACKUP"
+          - "PRIORITY_BACKUP"
+          - "SAFETY_SHUTDOWN"
+          - "SELL"
     - point: "ErrorWord"
       interval: 60
       display_name: "Last Recorded Error"
@@ -327,6 +337,8 @@ models:
       interval: 300
       readwrite: true
       display_name: "Clear PVRSS Lock-Out"
+      inputs:
+        button: "1"
   "64264":
     - point: "SelfTestResults"
       interval: 300
@@ -342,12 +354,14 @@ models:
       state_class: "measurement"
       precision: 1
       uom: "V"
+      scale_factor: -3
     - point: "VocCompensated"
       interval: 300
       device_class: "voltage"
       state_class: "measurement"
       precision: 1
       uom: "V"
+      scale_factor: -3
     - point: "TimesCountResultWasSuccess"
       interval: 300
       state_class: "total_increasing"

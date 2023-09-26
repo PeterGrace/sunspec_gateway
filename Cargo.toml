@@ -39,3 +39,4 @@ tracing-opentelemetry = "0.21.0"
 opentelemetry-otlp = {version="0.13.0", features=["http-proto","reqwest-rustls","reqwest-client"]}
 opentelemetry-semantic-conventions = "0.12.0"
 url = "2.4.1"
+num-traits = "0.2.16"

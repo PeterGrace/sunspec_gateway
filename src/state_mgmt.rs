@@ -158,7 +158,7 @@ pub async fn check_on(uniqueid: String) -> bool {
         r#"
     SELECT uniqueid, value from point_history
     WHERE uniqueid = $1
-    ORDER BY timestamp
+    ORDER BY timestamp desc
     LIMIT 1
     "#,
     )
@@ -168,7 +168,7 @@ pub async fn check_on(uniqueid: String) -> bool {
     {
         Ok(v) => {
             let val = v.get::<String, &str>("value");
-            val == "on"
+            val == r#""on""#
         }
         Err(e) => false,
     }

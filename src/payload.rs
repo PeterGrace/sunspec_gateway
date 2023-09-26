@@ -1,9 +1,12 @@
+use crate::config_structs::InputType;
 use crate::monitored_point::MonitoredPoint;
 use crate::state_mgmt::check_needs_adjust;
 use crate::sunspec_unit::SunSpecUnit;
 use chrono::{DateTime, Utc};
+use num_traits::pow::Pow;
 use serde::{Deserialize, Serialize};
-use sunspec_rs::sunspec_models::{Point, ValueType};
+use std::collections::HashMap;
+use sunspec_rs::sunspec_models::{Access, Point, ValueType};
 
 const DEFAULT_DISPLAY_PRECISION: Option<u8> = Some(4_u8);
 
@@ -37,6 +40,14 @@ pub enum Payload {
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum EntityCategory {
+    Config,
+    #[default]
+    Diagnostic,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct HAConfigPayload {
     pub name: String,
     pub device: DeviceInfo,
@@ -45,6 +56,10 @@ pub struct HAConfigPayload {
     pub state_topic: String,
     pub expires_after: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub entity_category: Option<EntityCategory>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub command_topic: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub payload_on: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub payload_off: Option<String>,
@@ -52,10 +67,8 @@ pub struct HAConfigPayload {
     pub state_class: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub device_class: Option<String>,
-    #[serde(
-        rename = "unit_of_measurement",
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "unit_of_measurement")]
     pub native_uom: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub options: Option<Vec<String>>,
@@ -63,6 +76,22 @@ pub struct HAConfigPayload {
     pub value_template: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub suggested_display_precision: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub assumed_state: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub attribution: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub available: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub entity_picture: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extra_state_attributes: Option<HashMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub has_entity_name: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub should_poll: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub translation_key: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -134,7 +163,24 @@ pub async fn generate_payloads(
             } else {
                 config_payload.native_uom = point_data.units.clone();
             }
-            state_payload.value = PayloadValueType::Int(*int as i64)
+
+            // if we are employing a scale factor on an int, it becomes a float
+            if let Some(scale) = monitored_point.scale_factor {
+                let mut scaled_value: f64 = 0.0;
+                if scale >= 0 {
+                    scaled_value = (*int as f32 * (f32::pow(10.0, scale.abs() as f32))).into();
+                } else {
+                    scaled_value = (*int as f32 / (f32::pow(10.0, scale.abs() as f32))).into();
+                }
+                if monitored_point.precision.is_some() {
+                    config_payload.suggested_display_precision = monitored_point.precision;
+                } else {
+                    config_payload.suggested_display_precision = DEFAULT_DISPLAY_PRECISION;
+                };
+                state_payload.value = PayloadValueType::Float(scaled_value)
+            } else {
+                state_payload.value = PayloadValueType::Int(*int as i64)
+            }
         }
         ValueType::Float(float) => {
             debug!("Response for {model}/{point_name}: {0:.1}", float);
@@ -149,7 +195,17 @@ pub async fn generate_payloads(
             } else {
                 config_payload.native_uom = point_data.units.clone();
             }
-            state_payload.value = PayloadValueType::Float(*float as f64);
+            let mut scaled_value: f64 = 0.0;
+            if let Some(scale) = monitored_point.scale_factor {
+                if scale >= 0 {
+                    scaled_value = (float * f32::pow(10.0, scale.abs() as f32)).into();
+                } else {
+                    scaled_value = (float / f32::pow(10.0, scale.abs() as f32)).into();
+                }
+            } else {
+                scaled_value = *float as f64;
+            }
+            state_payload.value = PayloadValueType::Float(scaled_value);
             if let Some(literal) = &point_data.literal {
                 if literal.label.is_some() {
                     config_payload.name = literal.label.clone().unwrap();
@@ -245,8 +301,19 @@ pub async fn generate_payloads(
         }
     }
 
+    let mut config_topic: String = format!("homeassistant/sensor/{sn}/{model}_{point_name}/config");
+    if matches!(monitored_point.write_mode, Access::ReadWrite) {
+        config_payload.command_topic =
+            Some(format!("sunspec_gateway/input/{sn}/{model}/{point_name}"));
+        if let Some(InputType::Select(options)) = &monitored_point.input_type {
+            config_payload.options = Some(options.to_vec());
+            config_payload.entity_category = Some(EntityCategory::Config);
+            config_payload.entity_id = format!("select.{sn}_{model}_{point_name}");
+            config_topic = format!("homeassistant/select/{sn}/{model}_{point_name}/config");
+        };
+    }
+
     let state_topic = format!("sunspec_gateway/{sn}/{model}/{point_name}");
-    let config_topic = format!("homeassistant/sensor/{sn}/{model}_{point_name}/config");
 
     config_payload.state_topic = state_topic.clone();
 

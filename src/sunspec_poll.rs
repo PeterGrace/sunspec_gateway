@@ -41,6 +41,18 @@ pub async fn poll_loop(unit: &SunSpecUnit, tx: Sender<IPCMessage>) -> Result<(),
     loop {
         // p is each point we've been asked to check.
         for requested_point_to_check in points.iter_mut() {
+            //region assign variables
+            let interval = requested_point_to_check.interval as i64;
+            let time_pad = thread_rng().gen_range(0..interval) as i64;
+            let model = requested_point_to_check.model.clone();
+            let point_name = requested_point_to_check.name.clone();
+            let log_prefix = format!(
+                "[{}:{} {sn} {model}/{point_name}]",
+                unit.addr, unit.slave_id
+            );
+            //endregion
+
+            // region instantiate modeldata for unit
             let md = match unit
                 .conn
                 .models
@@ -52,10 +64,9 @@ pub async fn poll_loop(unit: &SunSpecUnit, tx: Sender<IPCMessage>) -> Result<(),
                     continue;
                 }
             };
-            let interval = requested_point_to_check.interval as i64;
-            let time_pad = thread_rng().gen_range(0..interval) as i64;
-            let model = requested_point_to_check.model.clone();
-            let point_name = requested_point_to_check.name.clone();
+            //endregion
+
+            //region check if it is time to send a datapoint / report on point being stale
             if Utc::now().timestamp() - requested_point_to_check.last_report.timestamp()
                 < (interval + time_pad)
             {
@@ -63,11 +74,18 @@ pub async fn poll_loop(unit: &SunSpecUnit, tx: Sender<IPCMessage>) -> Result<(),
             } else {
                 if Utc::now().timestamp() - requested_point_to_check.last_report.timestamp() > 1800
                 {
-                    warn!("point {model}/{point_name} hasn't been updated in over 30 minutes.");
+                    warn!(
+                        "{log_prefix}: point hasn't been updated in over 30 minutes {} | {} .",
+                        Utc::now().timestamp(),
+                        requested_point_to_check.last_report.timestamp()
+                    );
                 }
             }
-            debug!(%sn, "Checking point {model}/{point_name}");
+            //endregion
 
+            debug!("{log_prefix}: Checking point {model}/{point_name}");
+
+            //region actually get the point and generate payload
             match unit
                 .conn
                 .clone()
@@ -77,15 +95,15 @@ pub async fn poll_loop(unit: &SunSpecUnit, tx: Sender<IPCMessage>) -> Result<(),
                 Err(e) => {
                     match e {
                         SunSpecPointError::GeneralError(e) => {
-                            error!("{model}/{point_name}: General error reading point: {e}");
+                            error!("{log_prefix}: General error reading point: {e}");
                             continue;
                         }
                         SunSpecPointError::DoesNotExist(e) => {
-                            error!("{model}/{point_name} Point specified does not exist: {e}");
+                            error!("{log_prefix}: Point specified does not exist: {e}");
                             continue;
                         }
                         SunSpecPointError::UndefinedError => {
-                            warn!("{model}/{point_name} Undefined error returned: {e}");
+                            warn!("{log_prefix}: Undefined error returned: {e}");
                             continue;
                         }
                         SunSpecPointError::CommError(e) => {
@@ -102,13 +120,16 @@ pub async fn poll_loop(unit: &SunSpecUnit, tx: Sender<IPCMessage>) -> Result<(),
                     }
                 }
                 Ok(recvd_point) => match recvd_point.clone().value {
-                    None => {}
+                    None => {
+                        info!("{log_prefix}: Received none on match recvd_point.clone().value -- is this ok?")
+                    }
                     Some(val) => {
                         let v = recvd_point.clone();
                         let payloads =
                             generate_payloads(unit, &recvd_point, &requested_point_to_check, &val)
                                 .await;
 
+                        requested_point_to_check.last_report = Utc::now();
                         for payload in payloads {
                             if requested_point_to_check.homeassistant_discovery {
                                 let _ = tx
@@ -129,18 +150,18 @@ pub async fn poll_loop(unit: &SunSpecUnit, tx: Sender<IPCMessage>) -> Result<(),
                                 cull_records_to(payload.config.clone().unique_id, CULL_HISTORY_ROWS)
                                     .await
                             {
-                                warn!("Couldn't cull history for this point: {e}");
+                                warn!("{log_prefix}: Couldn't cull history for this point: {e}");
                             };
                             if let Err(e) =
                                 write_payload_history(payload.config, payload.state).await
                             {
-                                warn!("Unable to store value in db: {e}");
+                                warn!("{log_prefix}: Unable to store value in db: {e}");
                             }
                         }
-                        requested_point_to_check.last_report = Utc::now();
                     }
                 },
             }
+            //endregion
         }
 
         debug!(%sn, "Device tick");

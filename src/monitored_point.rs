@@ -1,4 +1,4 @@
-use crate::config_structs::PointConfig;
+use crate::config_structs::{InputType, PointConfig};
 use chrono::{DateTime, Utc};
 use std::ffi::CString;
 use sunspec_rs::sunspec_models::Access;
@@ -31,6 +31,10 @@ pub struct MonitoredPoint {
     pub write_mode: Access,
     /// The preferred name for the point
     pub display_name: Option<String>,
+    /// the scale factor to apply, if necessary
+    pub scale_factor: Option<i32>,
+    /// what type of input is needed to send write commands on the topic
+    pub input_type: Option<InputType>,
 }
 
 impl MonitoredPoint {
@@ -70,6 +74,8 @@ impl MonitoredPoint {
             last_report: Utc::now(),
             homeassistant_discovery,
             write_mode,
+            scale_factor: pc.scale_factor,
+            input_type: pc.inputs,
         })
     }
 }

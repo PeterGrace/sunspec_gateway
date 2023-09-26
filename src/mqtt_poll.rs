@@ -9,6 +9,8 @@ use tokio::sync::mpsc::error::TryRecvError;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::time::{sleep, timeout};
 
+const MQTT_POLL_INTERVAL_SECS: u16 = 1_u16;
+
 pub async fn mqtt_poll_loop(mqtt: MqttConnection, mut rx: Receiver<IPCMessage>) {
     let task = tokio::spawn(async {
         let mut conn = mqtt.event_loop;
@@ -41,6 +43,9 @@ pub async fn mqtt_poll_loop(mqtt: MqttConnection, mut rx: Receiver<IPCMessage>) 
                             trace!("Recv MQTT PONG");
                         }
                         Incoming::SubAck(_) => {}
+                        Incoming::PubRec(pr) => {
+                            info!("Received pubrec: {:#?}", pr);
+                        }
                         _ => {
                             info!("mqtt incoming packet: {:#?}", i);
                         }
@@ -67,8 +72,8 @@ pub async fn mqtt_poll_loop(mqtt: MqttConnection, mut rx: Receiver<IPCMessage>) 
 
     loop {
         //region MQTT loop channel handling
-        match rx.recv().await {
-            Some(ipcm) => match ipcm {
+        match rx.try_recv() {
+            Ok(ipcm) => match ipcm {
                 IPCMessage::Outbound(msg) => {
                     let payload = match serde_json::to_vec(&msg.payload) {
                         Ok(p) => p,
@@ -103,12 +108,16 @@ pub async fn mqtt_poll_loop(mqtt: MqttConnection, mut rx: Receiver<IPCMessage>) 
                     unreachable!();
                 }
             },
-            None => {
-                error!("We are disconnected!");
-            }
+            Err(e) => match e {
+                TryRecvError::Empty => {}
+                TryRecvError::Disconnected => {
+                    error!("We are disconnected!");
+                }
+            },
         }
 
         //endregion
-        //let _ = sleep(Duration::from_millis(1000));
+        // trace!("mqtt tick");
+        let _ = sleep(Duration::from_millis(100)).await;
     }
 }

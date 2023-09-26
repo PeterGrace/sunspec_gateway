@@ -12,6 +12,14 @@ pub struct UnitConfig {
     pub slaves: Vec<u8>,
 }
 
+#[derive(Deserialize, Clone, Debug)]
+#[serde(rename_all = "lowercase")]
+pub enum InputType {
+    Select(Vec<String>),
+    Switch(String),
+    Button(String),
+}
+
 #[derive(Deserialize, Clone, Debug, Default)]
 pub struct PointConfig {
     pub point: String,
@@ -23,6 +31,8 @@ pub struct PointConfig {
     pub precision: Option<u8>,
     pub readwrite: Option<bool>,
     pub homeassistant: Option<bool>,
+    pub scale_factor: Option<i32>,
+    pub inputs: Option<InputType>,
 }
 
 #[derive(Deserialize, Clone, Debug, Default)]
