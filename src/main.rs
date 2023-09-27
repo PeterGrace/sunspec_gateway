@@ -19,7 +19,7 @@ mod sunspec_unit;
 use crate::cli_args::CliArgs;
 use crate::config_structs::GatewayConfig;
 use crate::config_structs::TracingConfig;
-use crate::ipc::{IPCMessage, PublishMessage};
+use crate::ipc::{IPCMessage, InboundMessage, PublishMessage};
 use crate::mqtt_connection::MqttConnection;
 use crate::mqtt_poll::mqtt_poll_loop;
 use crate::state_mgmt::prepare_to_database;
@@ -43,7 +43,7 @@ use std::process;
 use std::sync::Arc;
 use std::time::Duration;
 use sunspec_unit::SunSpecUnit;
-use tokio::sync::{mpsc, Mutex, RwLock};
+use tokio::sync::{broadcast, mpsc, Mutex, RwLock};
 use tokio::task::JoinSet;
 use tokio::time::{sleep, timeout};
 use tracing_log::AsTrace;
@@ -98,6 +98,8 @@ async fn main() {
     //let cli = CliArgs::parse();
     let (tx, mut rx) = mpsc::channel(MPSC_BUFFER_SIZE);
     let (mqtt_tx, mut mqtt_rx) = mpsc::channel(MPSC_BUFFER_SIZE);
+    let (from_mqtt_tx, mut from_mqtt_rx) = mpsc::channel(MPSC_BUFFER_SIZE);
+    let (broadcast_tx, mut broadcast_rx) = broadcast::channel::<IPCMessage>(16_usize);
 
     let console_layer = console_subscriber::spawn().with_filter(filter::filter_fn(|m| true));
     let env_filter = EnvFilter::try_from_default_env().unwrap_or(EnvFilter::new("INFO"));
@@ -151,7 +153,7 @@ async fn main() {
         }
     };
     let mqtt_handler = tokio::task::spawn(async move {
-        mqtt_poll_loop(mqtt_conn, mqtt_rx).await;
+        mqtt_poll_loop(mqtt_conn, mqtt_rx, from_mqtt_tx).await;
     });
     //endregion
 
@@ -174,8 +176,9 @@ async fn main() {
     for d in devices {
         let mut tasks = TASK_PILE.write().await;
         let tx = tx.clone();
+        let bcast_rx = broadcast_tx.subscribe();
         tasks.spawn(async move {
-            match poll_loop(&d, tx).await {
+            match poll_loop(&d, tx, bcast_rx).await {
                 Ok(_) => Ok(()),
                 Err(e) => Err(e),
             }
@@ -187,11 +190,12 @@ async fn main() {
 
     //region watch the mpsc tasks receive loop
     let mut msg_queue: VecDeque<PublishMessage> = VecDeque::new();
+    let mut incoming_control_queue: VecDeque<InboundMessage> = VecDeque::new();
     loop {
         //endregion
         //region sunspec device channel loop handling
-        match rx.recv().await {
-            Some(ipcm) => match ipcm {
+        match rx.try_recv() {
+            Ok(ipcm) => match ipcm {
                 IPCMessage::Outbound(o) => {
                     msg_queue.push_front(o);
                 }
@@ -200,6 +204,7 @@ async fn main() {
                 }
                 IPCMessage::PleaseReconnect(addr, slave) => {
                     let tx = tx.clone();
+                    let bcast_rx = broadcast_tx.subscribe();
                     let ssu = match SunSpecUnit::new(addr.clone(), slave.to_string()).await {
                         Ok(s) => s,
                         Err(e) => {
@@ -211,19 +216,48 @@ async fn main() {
                     info!("We received a PleaseReconnect message for {addr}/{slave}");
                     let mut tasks = TASK_PILE.write().await;
                     tasks.spawn(async move {
-                        match poll_loop(&ssu, tx).await {
+                        match poll_loop(&ssu, tx, bcast_rx).await {
                             Ok(_) => Ok(()),
                             Err(e) => return Err(e),
                         }
                     });
                 }
+                IPCMessage::Inbound(_) => {
+                    // we don't send inbounds to mqtt
+                    unreachable!();
+                }
             },
-            None => {
-                error!("Error receiving ipc message, None returned on rx.recv().await")
-            }
-        }
+            Err(_) => {}
+        };
+
+        match from_mqtt_rx.try_recv() {
+            Ok(recvd) => match recvd {
+                IPCMessage::Inbound(inmsg) => {
+                    info!(
+                        "Received payload for {},{},{}:{}",
+                        inmsg.serial_number, inmsg.model, inmsg.point_name, inmsg.payload
+                    );
+                    incoming_control_queue.push_front(inmsg.clone());
+                }
+                IPCMessage::Outbound(_) => {
+                    unreachable!();
+                }
+                IPCMessage::PleaseReconnect(_, _) => {
+                    unreachable!();
+                }
+                IPCMessage::Error(_) => {
+                    unreachable!();
+                }
+            },
+            Err(_) => {}
+        };
 
         //endregion
+        while let Some(msg) = incoming_control_queue.pop_front() {
+            if let Err(e) = broadcast_tx.send(IPCMessage::Inbound(msg)) {
+                error!("Unable to broadcast message to threads: {e}");
+            }
+        }
 
         while let Some(msg) = msg_queue.pop_front() {
             match timeout(
@@ -277,7 +311,7 @@ async fn main() {
             die("MQTT thread exited.");
         }
 
-        let _ = sleep(Duration::from_millis(1000));
+        let _ = sleep(Duration::from_millis(100));
     }
     //endregion
 }

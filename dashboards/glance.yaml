@@ -1,0 +1,25 @@
+views:
+  - title: Home
+    cards:
+      - type: glance
+        title: 0001002364be statuses
+        entities:
+          - binary_sensor.0001002364be_pv_link_64251_statusword_deadman_up
+          - binary_sensor.0001002364be_pv_link_64251_statusword_input_connected
+          - binary_sensor.0001002364be_pv_link_64251_statusword_input_disconneted
+          - binary_sensor.0001002364be_pv_link_64251_statusword_input_imped_tested
+          - binary_sensor.0001002364be_pv_link_64251_statusword_master_fault_active
+          - binary_sensor.0001002364be_pv_link_64251_statusword_output_connected
+          - binary_sensor.0001002364be_pv_link_64251_statusword_output_disconneted
+          - binary_sensor.0001002364be_pv_link_64264_status_installed_count_is_locked
+          - binary_sensor.0001002364be_pv_link_64264_status_voc_high_range
+      - type: glance
+        title: 0001002364be states
+        entities:
+          - binary_sensor.0001002364be_pv_link_404_evt_disconnected
+          - binary_sensor.0001002364be_pv_link_404_evt_low_voltage
+          - binary_sensor.0001002364be_pv_link_64207_rb_bus_disconnected
+          - binary_sensor.0001002364be_pv_link_64207_rb_enable_master
+          - binary_sensor.0001002364be_pv_link_64207_rb_heartbeat_good
+          - binary_sensor.0001002364be_pv_link_64251_enablebits_deadman
+          - binary_sensor.0001002364be_pv_link_64251_enablebits_unused6

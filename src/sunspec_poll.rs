@@ -11,13 +11,19 @@ use std::collections::HashMap;
 use sunspec_rs::model_data::ModelData;
 use sunspec_rs::sunspec_connection::SunSpecPointError;
 use sunspec_rs::sunspec_models::{Access, ValueType};
+use tokio::sync::broadcast::error::TryRecvError;
+use tokio::sync::broadcast::Receiver;
 use tokio::sync::mpsc::Sender;
 use tokio::time::{sleep, Duration, Instant};
 
 const MINIMUM_POLL_INTERVAL_SECS: u16 = 5_u16;
 const CULL_HISTORY_ROWS: u8 = 50_u8;
 
-pub async fn poll_loop(unit: &SunSpecUnit, tx: Sender<IPCMessage>) -> Result<(), GatewayError> {
+pub async fn poll_loop(
+    unit: &SunSpecUnit,
+    tx: Sender<IPCMessage>,
+    mut broadcast_rx: Receiver<IPCMessage>,
+) -> Result<(), GatewayError> {
     let genesis_moment = Utc::now();
     let sn = &unit.serial_number;
     let config = SETTINGS.read().await;
@@ -53,6 +59,76 @@ pub async fn poll_loop(unit: &SunSpecUnit, tx: Sender<IPCMessage>) -> Result<(),
                 "[{}:{} {sn} {model}/{point_name}]",
                 unit.addr, unit.slave_id
             );
+            //endregion
+
+            //region handle any incoming write requests asap
+            match broadcast_rx.try_recv() {
+                Ok(msg) => {
+                    match msg {
+                        IPCMessage::Inbound(inmsg) => {
+                            if inmsg.serial_number == *sn {
+                                info!("{log_prefix}: message was destined for me");
+                                let mn = unit.device_info.manufacturer.clone();
+                                let ssd = unit.data.clone();
+                                let mid = inmsg.model.parse::<u16>().unwrap();
+                                if let Some(symbols) = ssd.get_symbols_for_point(
+                                    mid,
+                                    inmsg.point_name.clone(),
+                                    Some(mn),
+                                ) {
+                                    for symbol in symbols {
+                                        if symbol.id == inmsg.payload {
+                                            info!("Found symbol {}->{}", symbol.id, symbol.symbol);
+                                            let md = unit.conn.models.get(&mid).unwrap();
+                                            match unit
+                                                .conn
+                                                .clone()
+                                                .set_point(
+                                                    md.clone(),
+                                                    &inmsg.point_name,
+                                                    ValueType::Integer(
+                                                        symbol.symbol.parse::<i32>().unwrap(),
+                                                    ),
+                                                )
+                                                .await
+                                            {
+                                                Ok(_) => {
+                                                    // maybe I can immediately reschedule a check of the point to get it refreshed?
+                                                    info!(
+                                                        "Value successfully sent {}:{}",
+                                                        inmsg.point_name, symbol.id
+                                                    );
+                                                }
+                                                Err(e) => {
+                                                    error!("Couldn't set point: {e}");
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        IPCMessage::Outbound(_) => {
+                            todo!()
+                        }
+                        IPCMessage::PleaseReconnect(_, _) => {
+                            todo!()
+                        }
+                        IPCMessage::Error(_) => {
+                            todo!()
+                        }
+                    }
+                }
+                Err(e) => match e {
+                    TryRecvError::Empty => {}
+                    TryRecvError::Closed => {
+                        panic!("Broadcast channel closed?")
+                    }
+                    TryRecvError::Lagged(lag) => {
+                        warn!("broadcast channel is lagged: {e}")
+                    }
+                },
+            }
             //endregion
 
             // region instantiate modeldata for unit

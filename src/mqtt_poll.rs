@@ -1,7 +1,8 @@
-use crate::ipc::IPCMessage;
+use crate::ipc::{IPCMessage, InboundMessage};
 use crate::mqtt_connection::MqttConnection;
 use rumqttc::{Event, Incoming, Outgoing, QoS};
 use std::future::Future;
+use std::str;
 use std::time::Duration;
 use tokio::sync::mpsc::error::TryRecvError;
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -9,8 +10,12 @@ use tokio::time::{sleep, timeout};
 
 const MQTT_POLL_INTERVAL_SECS: u16 = 1_u16;
 
-pub async fn mqtt_poll_loop(mqtt: MqttConnection, mut rx: Receiver<IPCMessage>) {
-    let task = tokio::spawn(async {
+pub async fn mqtt_poll_loop(
+    mqtt: MqttConnection,
+    mut incoming_rx: Receiver<IPCMessage>,
+    outgoing_tx: Sender<IPCMessage>,
+) {
+    let task = tokio::spawn(async move {
         let mut conn = mqtt.event_loop;
         let mut dlq: Vec<u16> = vec![];
         loop {
@@ -41,8 +46,23 @@ pub async fn mqtt_poll_loop(mqtt: MqttConnection, mut rx: Receiver<IPCMessage>) 
                             trace!("Recv MQTT PONG");
                         }
                         Incoming::SubAck(_) => {}
-                        Incoming::PubRec(pr) => {
-                            info!("Received pubrec: {:#?}", pr);
+                        Incoming::Publish(pr) => {
+                            info!("Received publish: {:#?} with payload {:#?}", pr, pr.payload);
+                            let mut splitval = pr.topic.splitn(5, "/");
+                            let (_, _, serial_number, model, point_name) = (
+                                splitval.next().unwrap().to_string(),
+                                splitval.next().unwrap().to_string(),
+                                splitval.next().unwrap().to_string(),
+                                splitval.next().unwrap().to_string(),
+                                splitval.next().unwrap().to_string(),
+                            );
+                            let ipc = IPCMessage::Inbound(InboundMessage {
+                                serial_number,
+                                model,
+                                point_name,
+                                payload: str::from_utf8(&pr.payload).unwrap().to_string(),
+                            });
+                            let _ = outgoing_tx.send(ipc).await;
                         }
                         _ => {
                             info!("mqtt incoming packet: {:#?}", i);
@@ -70,7 +90,7 @@ pub async fn mqtt_poll_loop(mqtt: MqttConnection, mut rx: Receiver<IPCMessage>) 
 
     loop {
         //region MQTT loop channel handling
-        match rx.try_recv() {
+        match incoming_rx.try_recv() {
             Ok(ipcm) => match ipcm {
                 IPCMessage::Outbound(msg) => {
                     let payload = match serde_json::to_vec(&msg.payload) {
@@ -103,6 +123,9 @@ pub async fn mqtt_poll_loop(mqtt: MqttConnection, mut rx: Receiver<IPCMessage>) 
                     return;
                 }
                 IPCMessage::PleaseReconnect(_, _) => {
+                    unreachable!();
+                }
+                IPCMessage::Inbound(_) => {
                     unreachable!();
                 }
             },

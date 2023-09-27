@@ -147,14 +147,14 @@ pub async fn generate_payloads(
     if let Some(display_name) = monitored_point.display_name.clone() {
         config_payload.name = display_name;
     } else {
-        config_payload.name = format!("{sn}: {model}-{point_name}");
+        config_payload.name = format!("{model}-{point_name}");
     }
     config_payload.device_class = monitored_point.device_class.clone();
     config_payload.state_class = monitored_point.state_class.clone();
     config_payload.expires_after = 300;
     config_payload.value_template = Some("{{ value_json.value }}".to_string());
     config_payload.unique_id = format!("{sn}.{model}.{point_name}");
-    config_payload.entity_id = format!("sensor.{sn}_{model}_{point_name}");
+    config_payload.entity_id = format!("sensor.{model}_{point_name}");
     config_payload.device = unit.device_info.clone();
     match val {
         ValueType::String(str) => {
@@ -241,8 +241,7 @@ pub async fn generate_payloads(
                     format!("homeassistant/binary_sensor/{sn}/{model}_{point_name}_{state}/config");
                 let state_topic = format!("sunspec_gateway/{sn}/{model}/{point_name}_{state}");
                 config_payload.unique_id = format!("{sn}.{model}.{point_name}.{state}");
-                config_payload.entity_id =
-                    format!("binary_sensor.{sn}_{model}_{point_name}_{state}");
+                config_payload.entity_id = format!("binary_sensor.{model}_{point_name}_{state}");
                 config_payload.name = format!("{model}/{point_name}: {state}");
                 config_payload.state_topic = state_topic.clone();
                 config_payload.payload_on = Some(string_on.clone());
@@ -284,7 +283,7 @@ pub async fn generate_payloads(
                             format!("sunspec_gateway/{sn}/{model}/{point_name}_{state}");
                         config_payload.unique_id = format!("{sn}.{model}.{point_name}.{state}");
                         config_payload.entity_id =
-                            format!("binary_sensor.{sn}_{model}_{point_name}_{state}");
+                            format!("binary_sensor.{model}_{point_name}_{state}");
                         config_payload.name = format!("{model}/{point_name}: {state}");
                         config_payload.state_topic = state_topic.clone();
                         config_payload.payload_on = Some(string_on.clone());
@@ -319,7 +318,7 @@ pub async fn generate_payloads(
                 InputType::Select(options) => {
                     config_payload.options = Some(options.to_vec());
                     config_payload.entity_category = Some(EntityCategory::Config);
-                    config_payload.entity_id = format!("select.{sn}_{model}_{point_name}");
+                    config_payload.entity_id = format!("select.{model}_{point_name}");
                     config_topic = format!("homeassistant/select/{sn}/{model}_{point_name}/config");
                 }
                 InputType::Switch(switch) => {
@@ -327,13 +326,13 @@ pub async fn generate_payloads(
                     config_payload.payload_on = Some(switch.on);
                     config_payload.payload_off = Some(switch.off);
                     config_payload.entity_category = Some(EntityCategory::Config);
-                    config_payload.entity_id = format!("switch.{sn}_{model}_{point_name}");
+                    config_payload.entity_id = format!("switch.{model}_{point_name}");
                     config_topic = format!("homeassistant/switch/{sn}/{model}_{point_name}/config");
                 }
                 InputType::Button(button) => {
                     config_payload.payload_press = Some(button.to_string());
                     config_payload.entity_category = Some(EntityCategory::Config);
-                    config_payload.entity_id = format!("button.{sn}_{model}_{point_name}");
+                    config_payload.entity_id = format!("button.{model}_{point_name}");
                     config_topic = format!("homeassistant/button/{sn}/{model}_{point_name}/config");
                 }
             },
