@@ -21,4 +21,4 @@ release-patch:
 release-minor:
   cargo release --no-publish --no-verify minor --execute
 release-major:
-  cargo release --no-publish --no-verify minor --execute
+  cargo release --no-publish --no-verify major --execute
