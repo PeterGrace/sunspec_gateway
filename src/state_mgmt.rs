@@ -45,15 +45,15 @@ pub async fn create_db() -> Result<()> {
 }
 
 pub async fn prepare_to_database() -> anyhow::Result<()> {
-    if let Err(e) = create_db().await {
-        bail!(e);
-    }
     let dbpath = match std::env::var("DB_FILE_PATH") {
         Ok(s) => s,
         Err(_e) => "./sunspec_gateway.db".to_string(),
     };
-
     DB_URL.set(dbpath).unwrap();
+
+    if let Err(e) = create_db().await {
+        bail!(e);
+    }
     let url = DB_URL.get().unwrap();
     let conn_options = SqliteConnectOptions::from_url(&Url::from_str(url).unwrap()).unwrap();
     //.log_statements(LevelFilter::Info);

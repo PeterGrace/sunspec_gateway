@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sunspec-gateway
+  namespace: sunspec-gateway
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: sunspec-gateway
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: sunspec-gateway
+    spec:
+      containers:
+      - name: sunspec-gateway
+        image: docker.io/petergrace/sunspec_gateway:v0.1.1
+        imagePullPolicy: Always
+        env:
+          - name: CONFIG_FILE_PATH
+            value: /config/config.yaml
+          - name: DB_FILE_PATH
+            value: /db/sunspec_gateway.db
+        ports:
+        - containerPort: 8080
+          name: metrics
+          protocol: TCP
+        resources:
+          requests:
+            cpu: 1000m
+            memory: 1Gi
+        volumeMounts:
+        - mountPath: /config
+          name: config
+        - mountPath: /db
+          name: state-db
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      serviceAccount: sunspec-gateway
+      serviceAccountName: sunspec-gateway
+      volumes:
+      - name: config
+        secret:
+          defaultMode: 420
+          secretName: sunspec-gateway-config
+      - name: state-db
+        persistentVolumeClaim:
+          claimName: sunspec-gateway-state-db
