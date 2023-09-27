@@ -3,7 +3,7 @@ shortcommit := `git rev-parse HEAD`
 transport := "docker://"
 registry := "docker.io"
 image := "petergrace/sunspec_gateway"
-tag := `git describe --tags`
+tag := `git describe --tags|| echo dev`
 
 build:
   cross build --release --target aarch64-unknown-linux-gnu

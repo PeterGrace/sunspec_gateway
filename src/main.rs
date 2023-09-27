@@ -95,13 +95,14 @@ pub fn die(msg: &str) {
 #[tokio::main]
 async fn main() {
     //region initialize app and logging
+    // disabling clap for the moment while I decide what I want to do with this vs. envvars
     //let cli = CliArgs::parse();
     let (tx, mut rx) = mpsc::channel(MPSC_BUFFER_SIZE);
     let (mqtt_tx, mut mqtt_rx) = mpsc::channel(MPSC_BUFFER_SIZE);
     let (from_mqtt_tx, mut from_mqtt_rx) = mpsc::channel(MPSC_BUFFER_SIZE);
     let (broadcast_tx, mut broadcast_rx) = broadcast::channel::<IPCMessage>(16_usize);
 
-    let console_layer = console_subscriber::spawn().with_filter(filter::filter_fn(|m| true));
+    let console_layer = console_subscriber::spawn();
     let env_filter = EnvFilter::try_from_default_env().unwrap_or(EnvFilter::new("INFO"));
     let format_layer = tracing_subscriber::fmt::layer().event_format(
         tracing_subscriber::fmt::format()

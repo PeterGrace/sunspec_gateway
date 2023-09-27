@@ -22,19 +22,21 @@ pub struct point_history {
     timestamp: String,
 }
 
-const DB_URL: &str = "sqlite://sunspec_gateway.db";
+//const DB_URL: &str = "sqlite://sunspec_gateway.db";
 
 lazy_static! {
     static ref DB_POOL: OnceCell<Pool<Sqlite>> = OnceCell::new();
+    static ref DB_URL: OnceCell<String> = OnceCell::new();
 }
 pub async fn acquire_db() -> PoolConnection<Sqlite> {
     DB_POOL.get().unwrap().acquire().await.unwrap()
 }
 
 pub async fn create_db() -> Result<()> {
-    if !Sqlite::database_exists(DB_URL).await.unwrap_or(false) {
-        info!("Creating database {}", DB_URL);
-        return match Sqlite::create_database(DB_URL).await {
+    let url = DB_URL.get().unwrap();
+    if !Sqlite::database_exists(url).await.unwrap_or(false) {
+        info!("Creating database {}", url);
+        return match Sqlite::create_database(url).await {
             Ok(_) => Ok(()),
             Err(error) => bail!("Create database error: {error}"),
         };
@@ -46,7 +48,14 @@ pub async fn prepare_to_database() -> anyhow::Result<()> {
     if let Err(e) = create_db().await {
         bail!(e);
     }
-    let conn_options = SqliteConnectOptions::from_url(&Url::from_str(DB_URL).unwrap()).unwrap();
+    let dbpath = match std::env::var("DB_FILE_PATH") {
+        Ok(s) => s,
+        Err(_e) => "./sunspec_gateway.db".to_string(),
+    };
+
+    DB_URL.set(dbpath).unwrap();
+    let url = DB_URL.get().unwrap();
+    let conn_options = SqliteConnectOptions::from_url(&Url::from_str(url).unwrap()).unwrap();
     //.log_statements(LevelFilter::Info);
     let pool = match SqlitePool::connect_with(conn_options).await {
         Ok(pool) => pool,

@@ -7,5 +7,8 @@ use clap_verbosity_flag;
 pub struct CliArgs {
     #[clap(flatten)]
     pub verbose: clap_verbosity_flag::Verbosity,
-    pub ttrace: Option<bool>,
+    #[arg(short = 'c', long = "config_path")]
+    pub config_path: Option<String>,
+    #[arg(short = 'd', long = "db_path")]
+    pub db_path: Option<String>,
 }
