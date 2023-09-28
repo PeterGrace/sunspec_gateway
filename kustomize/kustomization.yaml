@@ -7,6 +7,11 @@ resources:
 - svcacct.yaml
 - deployment.yaml
 
+images:
+  - name: IMAGE:TAG
+    newName: docker.io/petergrace/sunspec_gateway
+    newTag: v0.1.2
+
 secretGenerator:
 - files:
   - config.yaml

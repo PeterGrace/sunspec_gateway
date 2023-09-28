@@ -94,6 +94,14 @@ pub struct HAConfigPayload {
     pub translation_key: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub payload_press: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub min: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub step: Option<i32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -334,6 +342,15 @@ pub async fn generate_payloads(
                     config_payload.entity_category = Some(EntityCategory::Config);
                     config_payload.entity_id = format!("button.{model}_{point_name}");
                     config_topic = format!("homeassistant/button/{sn}/{model}_{point_name}/config");
+                }
+                InputType::Number(num) => {
+                    config_payload.min = Some(num.min);
+                    config_payload.max = Some(num.max);
+                    config_payload.step = num.step;
+                    config_payload.mode = num.mode.clone();
+                    config_payload.entity_category = Some(EntityCategory::Config);
+                    config_payload.entity_id = format!("number.{model}_{point_name}");
+                    config_topic = format!("homeassistant/number/{sn}/{model}_{point_name}/config");
                 }
             },
             None => {

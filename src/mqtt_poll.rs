@@ -23,8 +23,7 @@ pub async fn mqtt_poll_loop(
                 Ok(event) => event,
                 Err(e) => {
                     let msg = format!("Unable to poll mqtt: {e}");
-                    error!(msg);
-                    return;
+                    panic!("{}", msg);
                 }
             };
 
@@ -89,6 +88,9 @@ pub async fn mqtt_poll_loop(
     });
 
     loop {
+        if task.is_finished() {
+            panic!("mqtt eventloop finished, this only happens in a connection error");
+        }
         //region MQTT loop channel handling
         match incoming_rx.try_recv() {
             Ok(ipcm) => match ipcm {

@@ -1,4 +1,5 @@
-use crate::ipc::{IPCMessage, PublishMessage};
+use crate::config_structs::InputType;
+use crate::ipc::{IPCMessage, InboundMessage, PublishMessage};
 use crate::monitored_point::MonitoredPoint;
 use crate::payload::generate_payloads;
 use crate::payload::{HAConfigPayload, Payload, PayloadValueType, StatePayload};
@@ -71,6 +72,7 @@ pub async fn poll_loop(
                                 let mn = unit.device_info.manufacturer.clone();
                                 let ssd = unit.data.clone();
                                 let mid = inmsg.model.parse::<u16>().unwrap();
+
                                 if let Some(symbols) = ssd.get_symbols_for_point(
                                     mid,
                                     inmsg.point_name.clone(),
@@ -93,7 +95,7 @@ pub async fn poll_loop(
                                                 .await
                                             {
                                                 Ok(_) => {
-                                                    // maybe I can immediately reschedule a check of the point to get it refreshed?
+                                                    // TODO maybe I can immediately reschedule a check of the point to get it refreshed?
                                                     info!(
                                                         "Value successfully sent {}:{}",
                                                         inmsg.point_name, symbol.id
@@ -102,6 +104,73 @@ pub async fn poll_loop(
                                                 Err(e) => {
                                                     error!("Couldn't set point: {e}");
                                                 }
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    debug!("This inbound message has no symbol.  Need to check for number");
+                                    let config = SETTINGS.read().await;
+                                    let points = config.models.get(&inmsg.model).unwrap().clone();
+                                    drop(config);
+                                    for point in points {
+                                        if point.point == inmsg.point_name {
+                                            debug!("Found point config, now validating number");
+                                            if let Some(input) = point.inputs {
+                                                match input {
+                                                    InputType::Select(_) => {
+                                                        warn!("{log_prefix}: We can't find a symbol for this selection.  Received {}", inmsg.payload);
+                                                    }
+                                                    InputType::Switch(_) => {
+                                                        warn!("{log_prefix}: We can't find a symbol for this switch value.  Received {}", inmsg.payload);
+                                                    }
+                                                    InputType::Button(val) => {
+                                                        warn!("{log_prefix}: We can't find a symbol for this button payload.  Received {}", inmsg.payload);
+                                                    }
+                                                    InputType::Number(val) => {
+                                                        debug!("Inbound payload is a number!");
+                                                        match inmsg.payload.parse::<i32>() {
+                                                            Ok(parsed) => {
+                                                                if (parsed >= val.min
+                                                                    && parsed <= val.max)
+                                                                {
+                                                                    let md = unit
+                                                                        .conn
+                                                                        .models
+                                                                        .get(&mid)
+                                                                        .unwrap();
+                                                                    match unit
+                                                                        .conn
+                                                                        .clone()
+                                                                        .set_point(
+                                                                            md.clone(),
+                                                                            &inmsg.point_name,
+                                                                            ValueType::Integer(
+                                                                                parsed,
+                                                                            ),
+                                                                        )
+                                                                        .await
+                                                                    {
+                                                                        Ok(_) => {
+                                                                            // TODO maybe I can immediately reschedule a check of the point to get it refreshed?
+                                                                            info!(
+                                                        "Value successfully sent {}:{}",
+                                                        inmsg.point_name, parsed
+                                                    );
+                                                                        }
+                                                                        Err(e) => {
+                                                                            error!("Couldn't set point: {e}");
+                                                                        }
+                                                                    }
+                                                                } else {
+                                                                    error!("{log_prefix}: Sanity check failed: {parsed} is outside of {}<->{}",val.min, val.max);
+                                                                }
+                                                            }
+                                                            Err(e) => {
+                                                                error!("{log_prefix}: Inbound number was unparseable: {e}");
+                                                            }
+                                                        }
+                                                    }
+                                                };
                                             }
                                         }
                                     }

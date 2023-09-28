@@ -47,7 +47,7 @@ pub async fn create_db() -> Result<()> {
 pub async fn prepare_to_database() -> anyhow::Result<()> {
     let dbpath = match std::env::var("DB_FILE_PATH") {
         Ok(s) => s,
-        Err(_e) => "./sunspec_gateway.db".to_string(),
+        Err(_e) => "sqlite://./sunspec_gateway.db".to_string(),
     };
     DB_URL.set(dbpath).unwrap();
 

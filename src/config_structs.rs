@@ -18,11 +18,20 @@ pub struct Switchable {
 }
 
 #[derive(Deserialize, Clone, Debug)]
+pub struct Numerable {
+    pub min: i32,
+    pub max: i32,
+    pub step: Option<i32>,
+    pub mode: Option<String>,
+}
+
+#[derive(Deserialize, Clone, Debug)]
 #[serde(rename_all = "lowercase")]
 pub enum InputType {
     Select(Vec<String>),
     Switch(Switchable),
     Button(String),
+    Number(Numerable),
 }
 
 #[derive(Deserialize, Clone, Debug, Default)]

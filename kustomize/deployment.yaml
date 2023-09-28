@@ -19,13 +19,16 @@ spec:
     spec:
       containers:
       - name: sunspec-gateway
-        image: docker.io/petergrace/sunspec_gateway:v0.1.1
+        image: IMAGE:TAG
         imagePullPolicy: Always
+          #        command:
+          #          - /bin/sleep
+          #          - infinity
         env:
           - name: CONFIG_FILE_PATH
             value: /config/config.yaml
           - name: DB_FILE_PATH
-            value: /db/sunspec_gateway.db
+            value: sqlite:///db/sunspec_gateway.db
         ports:
         - containerPort: 8080
           name: metrics
