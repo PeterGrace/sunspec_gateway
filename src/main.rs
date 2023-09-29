@@ -230,6 +230,7 @@ async fn main() {
     let mut msg_queue: VecDeque<PublishMessage> = VecDeque::new();
     let mut incoming_control_queue: VecDeque<InboundMessage> = VecDeque::new();
     loop {
+        let _ = STATIC_PROM.registry.gather();
         //endregion
         //region sunspec device channel loop handling
         match rx.try_recv() {
