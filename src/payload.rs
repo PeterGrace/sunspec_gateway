@@ -1,4 +1,5 @@
 use crate::config_structs::InputType;
+use crate::consts::*;
 use crate::monitored_point::MonitoredPoint;
 use crate::state_mgmt::check_needs_adjust;
 use crate::sunspec_unit::SunSpecUnit;
@@ -7,8 +8,6 @@ use num_traits::pow::Pow;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use sunspec_rs::sunspec_models::{Access, Point, ValueType};
-
-const DEFAULT_DISPLAY_PRECISION: Option<u8> = Some(4_u8);
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct DeviceInfo {

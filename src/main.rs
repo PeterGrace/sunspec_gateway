@@ -6,8 +6,10 @@ extern crate thiserror;
 
 mod cli_args;
 mod config_structs;
+mod consts;
 mod date_serializer;
 mod ipc;
+mod metrics;
 mod monitored_point;
 mod mqtt_connection;
 mod mqtt_poll;
@@ -19,11 +21,14 @@ mod sunspec_unit;
 use crate::cli_args::CliArgs;
 use crate::config_structs::GatewayConfig;
 use crate::config_structs::TracingConfig;
+use crate::consts::*;
 use crate::ipc::{IPCMessage, InboundMessage, PublishMessage};
+use crate::metrics::{register_metrics, APP_INFO, STATIC_PROM};
 use crate::mqtt_connection::MqttConnection;
 use crate::mqtt_poll::mqtt_poll_loop;
 use crate::state_mgmt::prepare_to_database;
 use crate::sunspec_poll::poll_loop;
+use actix_web::{middleware, web, App, HttpResponse, HttpServer};
 use clap::Parser;
 use config::Config;
 use console_subscriber;
@@ -50,14 +55,14 @@ use tracing_log::AsTrace;
 use tracing_opentelemetry::OpenTelemetryLayer;
 use tracing_subscriber::{filter, prelude::*, EnvFilter, Layer, Registry};
 
-const MPSC_BUFFER_SIZE: usize = 100_usize;
-
 #[derive(Error, Debug, Default)]
 pub enum GatewayError {
     #[error("Communication Error: {0}")]
     CommunicationError(String),
     #[error("Error from thread: {0}")]
     Error(String),
+    #[error("Exiting thread")]
+    ExitingThread,
     #[error("Unspecified error")]
     #[default]
     Unspecified,
@@ -97,10 +102,34 @@ async fn main() {
     //region initialize app and logging
     // disabling clap for the moment while I decide what I want to do with this vs. envvars
     //let cli = CliArgs::parse();
+
+    register_metrics();
+    APP_INFO
+        .with_label_values(&[env!("CARGO_PKG_VERSION"), env!("GIT_HASH")])
+        .set(1_f64);
+    debug!(
+        "sunspec_gateway cargo:{}, githash:{}",
+        env!("CARGO_PKG_VERSION"),
+        env!("GIT_HASH")
+    );
+
+    let server = HttpServer::new(move || App::new().wrap(STATIC_PROM.clone()))
+        .bind(("0.0.0.0", 9898))
+        .unwrap()
+        .run();
+
+    tokio::task::spawn(server);
+
     let (tx, mut rx) = mpsc::channel(MPSC_BUFFER_SIZE);
     let (mqtt_tx, mut mqtt_rx) = mpsc::channel(MPSC_BUFFER_SIZE);
     let (from_mqtt_tx, mut from_mqtt_rx) = mpsc::channel(MPSC_BUFFER_SIZE);
     let (broadcast_tx, mut broadcast_rx) = broadcast::channel::<IPCMessage>(16_usize);
+
+    let bcasttx = broadcast_tx.clone();
+    ctrlc::set_handler(move || {
+        println!("Received Ctrl-C, communicating to threads to stop");
+        bcasttx.send(IPCMessage::Shutdown);
+    });
 
     let console_layer = console_subscriber::spawn();
     let env_filter = EnvFilter::try_from_default_env().unwrap_or(EnvFilter::new("INFO"));
@@ -153,8 +182,15 @@ async fn main() {
             return die("Couldn't create mqtt connection object: {e}");
         }
     };
+    let bcasttx = broadcast_tx.clone();
     let mqtt_handler = tokio::task::spawn(async move {
-        mqtt_poll_loop(mqtt_conn, mqtt_rx, from_mqtt_tx).await;
+        mqtt_poll_loop(
+            mqtt_conn,
+            mqtt_rx,
+            bcasttx.clone().subscribe(),
+            from_mqtt_tx,
+        )
+        .await;
     });
     //endregion
 
@@ -177,7 +213,7 @@ async fn main() {
     for d in devices {
         let mut tasks = TASK_PILE.write().await;
         let tx = tx.clone();
-        let bcast_rx = broadcast_tx.subscribe();
+        let bcast_rx = broadcast_tx.clone().subscribe();
         tasks.spawn(async move {
             match poll_loop(&d, tx, bcast_rx).await {
                 Ok(_) => Ok(()),
@@ -185,7 +221,6 @@ async fn main() {
             }
         });
     }
-    // drop write mutex on tasks
 
     //endregion
 
@@ -197,6 +232,9 @@ async fn main() {
         //region sunspec device channel loop handling
         match rx.try_recv() {
             Ok(ipcm) => match ipcm {
+                IPCMessage::Shutdown => {
+                    unreachable!();
+                }
                 IPCMessage::Outbound(o) => {
                     msg_queue.push_front(o);
                 }
@@ -239,6 +277,9 @@ async fn main() {
                         inmsg.serial_number, inmsg.model, inmsg.point_name, inmsg.payload
                     );
                     incoming_control_queue.push_front(inmsg.clone());
+                }
+                IPCMessage::Shutdown => {
+                    unreachable!();
                 }
                 IPCMessage::Outbound(_) => {
                     unreachable!();
@@ -312,7 +353,7 @@ async fn main() {
             die("MQTT thread exited.");
         }
 
-        let _ = sleep(Duration::from_millis(100));
+        let _ = sleep(Duration::from_millis(100)).await;
     }
     //endregion
 }

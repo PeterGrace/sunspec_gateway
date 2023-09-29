@@ -1,11 +1,8 @@
 use crate::config_structs::{InputType, PointConfig};
+use crate::consts::*;
 use chrono::{DateTime, Utc};
 use std::ffi::CString;
 use sunspec_rs::sunspec_models::Access;
-
-// we won't let points get checked faster than every 10 seconds.
-// if we change this, the modbus could get saturated very quickly
-const LOWER_LIMIT_INTERVAL: u64 = 10_u64;
 
 #[derive(Debug)]
 pub struct MonitoredPoint {

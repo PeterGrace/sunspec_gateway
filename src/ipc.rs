@@ -26,4 +26,5 @@ pub enum IPCMessage {
     Outbound(PublishMessage),
     PleaseReconnect(String, u8),
     Error(IPCError),
+    Shutdown,
 }

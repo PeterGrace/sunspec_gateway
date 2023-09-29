@@ -1,12 +1,9 @@
+use crate::consts::*;
 use anyhow;
 use rumqttc::{AsyncClient, EventLoop, MqttOptions, QoS};
 use std::fmt::{Debug, Formatter};
 use std::ops::{Deref, DerefMut};
 use tokio::time::Duration;
-
-const MQTT_KEEPALIVE_TIME: u64 = 5_u64;
-const MQTT_THREAD_CHANNEL_CAPACITY: usize = 10_usize;
-const MQTT_INBOUND_CONTROL_TOPIC: &str = "sunspec_gateway/input/#";
 
 #[derive(Debug)]
 pub struct MqttConnection {

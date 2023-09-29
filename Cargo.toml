@@ -26,6 +26,7 @@ rumqttc = "0.22.0"
 serde = {version="1.0.185", features=["derive"]}
 serde_json = "1.0.105"
 serde_yaml = "=0.8.26"
+prometheus = {version = "0.13.3", features=["process"]}
 #sunspec_rs = "0.3.1"
 sunspec_rs = {path = "/home/pgrace/repos/sunspec_rs"}
 console-subscriber = "0.1.10"
@@ -40,3 +41,7 @@ opentelemetry-otlp = {version="0.13.0", features=["http-proto","reqwest-rustls",
 opentelemetry-semantic-conventions = "0.12.0"
 url = "2.4.1"
 num-traits = "0.2.16"
+actix-web = {version="4.3.1", features=["rustls"]}
+actix-web-prom = "0.6.0"
+metrics-process = "1.0.12"
+ctrlc = "3.4.1"

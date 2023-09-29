@@ -1,4 +1,5 @@
 use crate::config_structs::InputType;
+use crate::consts::*;
 use crate::ipc::{IPCMessage, InboundMessage, PublishMessage};
 use crate::monitored_point::MonitoredPoint;
 use crate::payload::generate_payloads;
@@ -16,9 +17,6 @@ use tokio::sync::broadcast::error::TryRecvError;
 use tokio::sync::broadcast::Receiver;
 use tokio::sync::mpsc::Sender;
 use tokio::time::{sleep, Duration, Instant};
-
-const MINIMUM_POLL_INTERVAL_SECS: u16 = 5_u16;
-const CULL_HISTORY_ROWS: u8 = 50_u8;
 
 pub async fn poll_loop(
     unit: &SunSpecUnit,
@@ -66,6 +64,11 @@ pub async fn poll_loop(
             match broadcast_rx.try_recv() {
                 Ok(msg) => {
                     match msg {
+                        IPCMessage::Shutdown => {
+                            info!("{log_prefix}: Received shutdown message, exiting thread.");
+                            // TODO: when I implement disconnect on SunSpecConnection, should call that here
+                            return Err(GatewayError::ExitingThread);
+                        }
                         IPCMessage::Inbound(inmsg) => {
                             if inmsg.serial_number == *sn {
                                 info!("{log_prefix}: message was destined for me");

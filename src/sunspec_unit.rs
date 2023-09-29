@@ -1,3 +1,4 @@
+use crate::consts::*;
 use crate::monitored_point::MonitoredPoint;
 use crate::payload::DeviceInfo;
 use anyhow::bail;
@@ -7,8 +8,6 @@ use sunspec_rs::model_data::ModelData;
 use sunspec_rs::sunspec_connection::{SunSpecConnection, SunSpecPointError};
 use sunspec_rs::sunspec_data::SunSpecData;
 use sunspec_rs::sunspec_models::ValueType;
-
-const COMMON_MODEL_ID: u16 = 1_u16;
 
 #[derive(Debug)]
 pub struct SunSpecUnit {

@@ -1,20 +1,23 @@
 use crate::ipc::{IPCMessage, InboundMessage};
+use crate::metrics::MQTT_CONFIG_PAYLOADS_SENT;
 use crate::mqtt_connection::MqttConnection;
+use crate::payload::Payload;
+use crate::{payload, GatewayError};
 use rumqttc::{Event, Incoming, Outgoing, QoS};
 use std::future::Future;
 use std::str;
 use std::time::Duration;
+use tokio::sync::broadcast;
+use tokio::sync::mpsc;
 use tokio::sync::mpsc::error::TryRecvError;
-use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::time::{sleep, timeout};
-
-const MQTT_POLL_INTERVAL_SECS: u16 = 1_u16;
 
 pub async fn mqtt_poll_loop(
     mqtt: MqttConnection,
-    mut incoming_rx: Receiver<IPCMessage>,
-    outgoing_tx: Sender<IPCMessage>,
-) {
+    mut incoming_rx: tokio::sync::mpsc::Receiver<IPCMessage>,
+    mut bcast_rx: tokio::sync::broadcast::Receiver<IPCMessage>,
+    outgoing_tx: mpsc::Sender<IPCMessage>,
+) -> Result<(), GatewayError> {
     let task = tokio::spawn(async move {
         let mut conn = mqtt.event_loop;
         let mut dlq: Vec<u16> = vec![];
@@ -91,6 +94,20 @@ pub async fn mqtt_poll_loop(
         if task.is_finished() {
             panic!("mqtt eventloop finished, this only happens in a connection error");
         }
+        match bcast_rx.try_recv() {
+            Ok(ipcm) => match ipcm {
+                IPCMessage::Shutdown => {
+                    info!("MQTT Received shutdown message, exiting thread.");
+                    mqtt.client.disconnect().await;
+                    return Err(GatewayError::ExitingThread);
+                }
+                IPCMessage::Inbound(_) => {}
+                IPCMessage::Outbound(_) => {}
+                IPCMessage::PleaseReconnect(_, _) => {}
+                IPCMessage::Error(_) => {}
+            },
+            Err(_) => {}
+        }
         //region MQTT loop channel handling
         match incoming_rx.try_recv() {
             Ok(ipcm) => match ipcm {
@@ -110,7 +127,13 @@ pub async fn mqtt_poll_loop(
                     .await
                     {
                         Ok(result) => match result {
-                            Ok(_) => {}
+                            Ok(_) => {
+                                if let Payload::Config(config) = msg.payload {
+                                    let vals =
+                                        config.unique_id.splitn(3, ".").collect::<Vec<&str>>();
+                                    &MQTT_CONFIG_PAYLOADS_SENT.with_label_values(&vals).inc();
+                                };
+                            }
                             Err(e) => {
                                 error!("Couldn't send message: {e}");
                             }
@@ -122,13 +145,18 @@ pub async fn mqtt_poll_loop(
                 }
                 IPCMessage::Error(e) => {
                     error!("serial={}: {}", e.serial_number, e.msg);
-                    return;
+                    return Err(GatewayError::Unspecified);
                 }
                 IPCMessage::PleaseReconnect(_, _) => {
                     unreachable!();
                 }
                 IPCMessage::Inbound(_) => {
                     unreachable!();
+                }
+                IPCMessage::Shutdown => {
+                    info!("MQTT Received shutdown message, exiting thread.");
+                    mqtt.client.disconnect().await;
+                    return Err(GatewayError::ExitingThread);
                 }
             },
             Err(e) => match e {
@@ -143,4 +171,5 @@ pub async fn mqtt_poll_loop(
         // trace!("mqtt tick");
         let _ = sleep(Duration::from_millis(100)).await;
     }
+    Ok(())
 }
