@@ -6,11 +6,12 @@ resources:
 - pvc.yaml
 - svcacct.yaml
 - deployment.yaml
+- podmonitor.yaml
 
 images:
-  - name: IMAGE:TAG
-    newName: docker.io/petergrace/sunspec_gateway
-    newTag: v0.2.0
+- name: IMAGE:TAG
+  newName: docker.io/petergrace/sunspec_gateway
+  newTag: v0.2.0
 
 secretGenerator:
 - files:

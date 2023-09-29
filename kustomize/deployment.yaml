@@ -30,7 +30,7 @@ spec:
           - name: DB_FILE_PATH
             value: sqlite:///db/sunspec_gateway.db
         ports:
-        - containerPort: 8080
+        - containerPort: 9898
           name: metrics
           protocol: TCP
         resources:
