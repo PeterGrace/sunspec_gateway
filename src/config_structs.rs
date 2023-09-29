@@ -47,6 +47,7 @@ pub struct PointConfig {
     pub homeassistant: Option<bool>,
     pub scale_factor: Option<i32>,
     pub inputs: Option<InputType>,
+    pub input_only: Option<bool>,
 }
 
 #[derive(Deserialize, Clone, Debug, Default)]

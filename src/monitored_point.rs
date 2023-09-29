@@ -30,6 +30,8 @@ pub struct MonitoredPoint {
     pub scale_factor: Option<i32>,
     /// what type of input is needed to send write commands on the topic
     pub input_type: Option<InputType>,
+    /// this point is only for input and cannot be read.
+    pub input_only: Option<bool>,
 }
 
 impl MonitoredPoint {
@@ -70,6 +72,7 @@ impl MonitoredPoint {
             write_mode,
             scale_factor: pc.scale_factor,
             input_type: pc.inputs,
+            input_only: pc.input_only,
         })
     }
 }

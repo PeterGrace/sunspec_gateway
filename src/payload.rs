@@ -138,9 +138,9 @@ pub struct CompoundPayload {
 
 pub async fn generate_payloads(
     unit: &SunSpecUnit,
-    point_data: &Point,
+    point_data: Option<&Point>,
     monitored_point: &MonitoredPoint,
-    val: &ValueType,
+    val: Option<&ValueType>,
 ) -> Vec<CompoundPayload> {
     let sn = unit.serial_number.clone();
     let model = monitored_point.model.clone();
@@ -163,156 +163,160 @@ pub async fn generate_payloads(
     config_payload.unique_id = format!("{sn}.{model}.{point_name}");
     config_payload.entity_id = format!("sensor.{model}_{point_name}");
     config_payload.device = unit.device_info.clone();
-    match val {
-        ValueType::String(str) => {
-            debug!("Response for {model}/{point_name}: {str}");
-            state_payload.value = PayloadValueType::String(str.to_owned())
-        }
-        ValueType::Integer(int) => {
-            debug!("Response for {model}/{point_name}: {int}");
-            if monitored_point.uom.is_some() {
-                // we are overriding the default uom from config
-                config_payload.native_uom = monitored_point.uom.clone();
-            } else {
-                config_payload.native_uom = point_data.units.clone();
+    if val.is_some() && point_data.is_some() {
+        match val.unwrap() {
+            ValueType::String(str) => {
+                debug!("Response for {model}/{point_name}: {str}");
+                state_payload.value = PayloadValueType::String(str.to_owned())
             }
-
-            // if we are employing a scale factor on an int, it becomes a float
-            if let Some(scale) = monitored_point.scale_factor {
-                let mut scaled_value: f64 = 0.0;
-                if scale >= 0 {
-                    scaled_value = (*int as f32 * (f32::pow(10.0, scale.abs() as f32))).into();
+            ValueType::Integer(int) => {
+                debug!("Response for {model}/{point_name}: {int}");
+                if monitored_point.uom.is_some() {
+                    // we are overriding the default uom from config
+                    config_payload.native_uom = monitored_point.uom.clone();
                 } else {
-                    scaled_value = (*int as f32 / (f32::pow(10.0, scale.abs() as f32))).into();
+                    config_payload.native_uom = point_data.unwrap().units.clone();
                 }
+
+                // if we are employing a scale factor on an int, it becomes a float
+                if let Some(scale) = monitored_point.scale_factor {
+                    let mut scaled_value: f64 = 0.0;
+                    if scale >= 0 {
+                        scaled_value = (*int as f32 * (f32::pow(10.0, scale.abs() as f32))).into();
+                    } else {
+                        scaled_value = (*int as f32 / (f32::pow(10.0, scale.abs() as f32))).into();
+                    }
+                    if monitored_point.precision.is_some() {
+                        config_payload.suggested_display_precision = monitored_point.precision;
+                    } else {
+                        config_payload.suggested_display_precision = DEFAULT_DISPLAY_PRECISION;
+                    };
+                    state_payload.value = PayloadValueType::Float(scaled_value)
+                } else {
+                    state_payload.value = PayloadValueType::Int(*int as i64)
+                }
+            }
+            ValueType::Float(float) => {
+                debug!("Response for {model}/{point_name}: {0:.1}", float);
                 if monitored_point.precision.is_some() {
                     config_payload.suggested_display_precision = monitored_point.precision;
                 } else {
                     config_payload.suggested_display_precision = DEFAULT_DISPLAY_PRECISION;
                 };
-                state_payload.value = PayloadValueType::Float(scaled_value)
-            } else {
-                state_payload.value = PayloadValueType::Int(*int as i64)
-            }
-        }
-        ValueType::Float(float) => {
-            debug!("Response for {model}/{point_name}: {0:.1}", float);
-            if monitored_point.precision.is_some() {
-                config_payload.suggested_display_precision = monitored_point.precision;
-            } else {
-                config_payload.suggested_display_precision = DEFAULT_DISPLAY_PRECISION;
-            };
-            if monitored_point.uom.is_some() {
-                // we are overriding the default uom from config
-                config_payload.native_uom = monitored_point.uom.clone();
-            } else {
-                config_payload.native_uom = point_data.units.clone();
-            }
-            let mut scaled_value: f64 = 0.0;
-            if let Some(scale) = monitored_point.scale_factor {
-                if scale >= 0 {
-                    scaled_value = (float * f32::pow(10.0, scale.abs() as f32)).into();
+                if monitored_point.uom.is_some() {
+                    // we are overriding the default uom from config
+                    config_payload.native_uom = monitored_point.uom.clone();
                 } else {
-                    scaled_value = (float / f32::pow(10.0, scale.abs() as f32)).into();
+                    config_payload.native_uom = point_data.unwrap().units.clone();
                 }
-            } else {
-                scaled_value = *float as f64;
-            }
-            state_payload.value = PayloadValueType::Float(scaled_value);
-            if let Some(literal) = &point_data.literal {
-                if literal.label.is_some() {
-                    config_payload.name = literal.label.clone().unwrap();
-                }
-                state_payload.label = literal.clone().label;
-                state_payload.description = literal.clone().description;
-                state_payload.notes = literal.clone().notes;
-            }
-        }
-        ValueType::Boolean(boolean) => {
-            debug!("Response for {model}/{point_name}: {boolean}");
-            state_payload.value = PayloadValueType::String(boolean.to_string());
-        }
-        ValueType::Array(vec) => {
-            // we have an array of strings, we need to make binary sensors.
-            let string_on: String = String::from("on");
-            let string_off: String = String::from("off");
-
-            let mut payloads: Vec<CompoundPayload> = vec![];
-            let mut updated_uniques: Vec<String> = vec![];
-            for state in vec {
-                // clone preexisiting objects
-                let mut config_payload = config_payload.clone();
-                let mut state_payload = state_payload.clone();
-                // configure this point's state addresses
-                let config_topic =
-                    format!("homeassistant/binary_sensor/{sn}/{model}_{point_name}_{state}/config");
-                let state_topic = format!("sunspec_gateway/{sn}/{model}/{point_name}_{state}");
-                config_payload.unique_id = format!("{sn}.{model}.{point_name}.{state}");
-                config_payload.entity_id = format!("binary_sensor.{model}_{point_name}_{state}");
-                config_payload.name = format!("{model}/{point_name}: {state}");
-                config_payload.state_topic = state_topic.clone();
-                config_payload.payload_on = Some(string_on.clone());
-                config_payload.payload_off = Some(string_off.clone());
-                state_payload.value = PayloadValueType::String(string_on.clone());
-                payloads.push(CompoundPayload {
-                    state_topic,
-                    config_topic,
-                    config: config_payload.clone(),
-                    state: state_payload.clone(),
-                });
-                updated_uniques.push(config_payload.unique_id.clone());
-            }
-            // now, lets set state to off for points we didn't see
-            match check_needs_adjust(updated_uniques).await {
-                Ok(stale) => {
-                    if stale.len() > 0 {
-                        info!(
-                            "{log_prefix}: sending off for {} binary sensors",
-                            stale.len()
-                        );
+                let mut scaled_value: f64 = 0.0;
+                if let Some(scale) = monitored_point.scale_factor {
+                    if scale >= 0 {
+                        scaled_value = (float * f32::pow(10.0, scale.abs() as f32)).into();
+                    } else {
+                        scaled_value = (float / f32::pow(10.0, scale.abs() as f32)).into();
                     }
-                    for stale_unique in stale {
-                        let mut splitval = stale_unique.splitn(4, ".");
-                        let (sn, model, point_name, state) = (
-                            splitval.next().unwrap().to_string(),
-                            splitval.next().unwrap().to_string(),
-                            splitval.next().unwrap().to_string(),
-                            splitval.next().unwrap().to_string(),
-                        );
-                        // clone preexisiting objects
-                        let mut config_payload = config_payload.clone();
-                        let mut state_payload = state_payload.clone();
-                        // configure this point's state addresses
-                        let config_topic = format!(
-                            "homeassistant/binary_sensor/{sn}/{model}_{point_name}_{state}/config"
-                        );
-                        let state_topic =
-                            format!("sunspec_gateway/{sn}/{model}/{point_name}_{state}");
-                        config_payload.unique_id = format!("{sn}.{model}.{point_name}.{state}");
-                        config_payload.entity_id =
-                            format!("binary_sensor.{model}_{point_name}_{state}");
-                        config_payload.name = format!("{model}/{point_name}: {state}");
-                        config_payload.state_topic = state_topic.clone();
-                        config_payload.payload_on = Some(string_on.clone());
-                        config_payload.payload_off = Some(string_off.clone());
-                        state_payload.value = PayloadValueType::String(string_off.clone());
-                        payloads.push(CompoundPayload {
-                            state_topic,
-                            config_topic,
-                            config: config_payload,
-                            state: state_payload,
-                        });
+                } else {
+                    scaled_value = *float as f64;
+                }
+                state_payload.value = PayloadValueType::Float(scaled_value);
+                if let Some(literal) = &point_data.unwrap().literal {
+                    if literal.label.is_some() {
+                        config_payload.name = literal.label.clone().unwrap();
                     }
+                    state_payload.label = literal.clone().label;
+                    state_payload.description = literal.clone().description;
+                    state_payload.notes = literal.clone().notes;
                 }
-                Err(e) => {
-                    warn!("{e}");
-                }
-            };
+            }
+            ValueType::Boolean(boolean) => {
+                debug!("Response for {model}/{point_name}: {boolean}");
+                state_payload.value = PayloadValueType::String(boolean.to_string());
+            }
+            ValueType::Array(vec) => {
+                // we have an array of strings, we need to make binary sensors.
+                let string_on: String = String::from("on");
+                let string_off: String = String::from("off");
 
-            return payloads;
-            // debug!("Response for {model}/{point_name}: {:#?}", vec);
-            // let concat = vec.join(", ");
-            // state_payload.value = PayloadValueType::String(concat)
+                let mut payloads: Vec<CompoundPayload> = vec![];
+                let mut updated_uniques: Vec<String> = vec![];
+                for state in vec {
+                    // clone preexisiting objects
+                    let mut config_payload = config_payload.clone();
+                    let mut state_payload = state_payload.clone();
+                    // configure this point's state addresses
+                    let config_topic = format!(
+                        "homeassistant/binary_sensor/{sn}/{model}_{point_name}_{state}/config"
+                    );
+                    let state_topic = format!("sunspec_gateway/{sn}/{model}/{point_name}_{state}");
+                    config_payload.unique_id = format!("{sn}.{model}.{point_name}.{state}");
+                    config_payload.entity_id =
+                        format!("binary_sensor.{model}_{point_name}_{state}");
+                    config_payload.name = format!("{model}/{point_name}: {state}");
+                    config_payload.state_topic = state_topic.clone();
+                    config_payload.payload_on = Some(string_on.clone());
+                    config_payload.payload_off = Some(string_off.clone());
+                    state_payload.value = PayloadValueType::String(string_on.clone());
+                    payloads.push(CompoundPayload {
+                        state_topic,
+                        config_topic,
+                        config: config_payload.clone(),
+                        state: state_payload.clone(),
+                    });
+                    updated_uniques.push(config_payload.unique_id.clone());
+                }
+                // now, lets set state to off for points we didn't see
+                match check_needs_adjust(updated_uniques).await {
+                    Ok(stale) => {
+                        if stale.len() > 0 {
+                            info!(
+                                "{log_prefix}: sending off for {} binary sensors",
+                                stale.len()
+                            );
+                        }
+                        for stale_unique in stale {
+                            let mut splitval = stale_unique.splitn(4, ".");
+                            let (sn, model, point_name, state) = (
+                                splitval.next().unwrap().to_string(),
+                                splitval.next().unwrap().to_string(),
+                                splitval.next().unwrap().to_string(),
+                                splitval.next().unwrap().to_string(),
+                            );
+                            // clone preexisiting objects
+                            let mut config_payload = config_payload.clone();
+                            let mut state_payload = state_payload.clone();
+                            // configure this point's state addresses
+                            let config_topic = format!(
+                                "homeassistant/binary_sensor/{sn}/{model}_{point_name}_{state}/config"
+                            );
+                            let state_topic =
+                                format!("sunspec_gateway/{sn}/{model}/{point_name}_{state}");
+                            config_payload.unique_id = format!("{sn}.{model}.{point_name}.{state}");
+                            config_payload.entity_id =
+                                format!("binary_sensor.{model}_{point_name}_{state}");
+                            config_payload.name = format!("{model}/{point_name}: {state}");
+                            config_payload.state_topic = state_topic.clone();
+                            config_payload.payload_on = Some(string_on.clone());
+                            config_payload.payload_off = Some(string_off.clone());
+                            state_payload.value = PayloadValueType::String(string_off.clone());
+                            payloads.push(CompoundPayload {
+                                state_topic,
+                                config_topic,
+                                config: config_payload,
+                                state: state_payload,
+                            });
+                        }
+                    }
+                    Err(e) => {
+                        warn!("{e}");
+                    }
+                };
+
+                return payloads;
+                // debug!("Response for {model}/{point_name}: {:#?}", vec);
+                // let concat = vec.join(", ");
+                // state_payload.value = PayloadValueType::String(concat)
+            }
         }
     }
 

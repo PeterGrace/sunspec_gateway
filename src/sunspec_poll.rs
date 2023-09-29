@@ -319,82 +319,105 @@ pub async fn poll_loop(
             //endregion
 
             debug!("{log_prefix}: Checking point {model}/{point_name}");
-
+            let input_only = requested_point_to_check.input_only.unwrap_or(false);
             //region actually get the point and generate payload
-            match unit
-                .conn
-                .clone()
-                .get_point(md.unwrap().clone(), &requested_point_to_check.name)
-                .await
-            {
-                Err(e) => {
-                    match e {
-                        SunSpecPointError::GeneralError(e) => {
-                            error!("{log_prefix}: General error reading point: {e}");
-                            continue;
+            if input_only {
+                debug!("{log_prefix}: this point is input-only; skipping point get and just sending config payload.");
+                let payloads = generate_payloads(unit, None, &requested_point_to_check, None).await;
+
+                last_report.insert(uniqueid, Utc::now());
+                if requested_point_to_check.homeassistant_discovery {
+                    let _ = tx
+                        .send(IPCMessage::Outbound(PublishMessage {
+                            topic: payloads[0].config_topic.clone(),
+                            payload: Payload::Config(payloads[0].config.clone()),
+                        }))
+                        .await;
+                }
+            } else {
+                match unit
+                    .conn
+                    .clone()
+                    .get_point(md.unwrap().clone(), &requested_point_to_check.name)
+                    .await
+                {
+                    Err(e) => {
+                        match e {
+                            SunSpecPointError::GeneralError(e) => {
+                                error!("{log_prefix}: General error reading point: {e}");
+                                continue;
+                            }
+                            SunSpecPointError::DoesNotExist(e) => {
+                                error!("{log_prefix}: Point specified does not exist: {e}");
+                                continue;
+                            }
+                            SunSpecPointError::UndefinedError => {
+                                warn!("{log_prefix}: Undefined error returned: {e}");
+                                continue;
+                            }
+                            SunSpecPointError::CommError(e) => {
+                                let _ = tx
+                                    .send(IPCMessage::PleaseReconnect(
+                                        unit.addr.clone(),
+                                        unit.slave_id,
+                                    ))
+                                    .await;
+                                // lets wait two seconds for the ipc to process.
+                                let _ = sleep(Duration::from_secs(2)).await;
+                                return Err(GatewayError::CommunicationError(e.to_string()));
+                            }
                         }
-                        SunSpecPointError::DoesNotExist(e) => {
-                            error!("{log_prefix}: Point specified does not exist: {e}");
-                            continue;
-                        }
-                        SunSpecPointError::UndefinedError => {
-                            warn!("{log_prefix}: Undefined error returned: {e}");
-                            continue;
-                        }
-                        SunSpecPointError::CommError(e) => {
-                            let _ = tx
-                                .send(IPCMessage::PleaseReconnect(
-                                    unit.addr.clone(),
-                                    unit.slave_id,
-                                ))
+                    }
+                    Ok(recvd_point) => {
+                        match recvd_point.clone().value {
+                            None => {
+                                info!("{log_prefix}: Received none on match recvd_point.clone().value -- is this ok?")
+                            }
+                            Some(val) => {
+                                let v = recvd_point.clone();
+                                let payloads = generate_payloads(
+                                    unit,
+                                    Some(&recvd_point),
+                                    &requested_point_to_check,
+                                    Some(&val),
+                                )
                                 .await;
-                            // lets wait two seconds for the ipc to process.
-                            let _ = sleep(Duration::from_secs(2)).await;
-                            return Err(GatewayError::CommunicationError(e.to_string()));
+
+                                last_report.insert(uniqueid, Utc::now());
+                                for payload in payloads {
+                                    if requested_point_to_check.homeassistant_discovery {
+                                        let _ = tx
+                                            .send(IPCMessage::Outbound(PublishMessage {
+                                                topic: payload.config_topic,
+                                                payload: Payload::Config(payload.config.clone()),
+                                            }))
+                                            .await;
+                                    }
+
+                                    let _ = tx
+                                        .send(IPCMessage::Outbound(PublishMessage {
+                                            topic: payload.state_topic,
+                                            payload: Payload::CurrentState(payload.state.clone()),
+                                        }))
+                                        .await;
+                                    if let Err(e) = cull_records_to(
+                                        payload.config.clone().unique_id,
+                                        CULL_HISTORY_ROWS,
+                                    )
+                                    .await
+                                    {
+                                        warn!("{log_prefix}: Couldn't cull history for this point: {e}");
+                                    };
+                                    if let Err(e) =
+                                        write_payload_history(payload.config, payload.state).await
+                                    {
+                                        warn!("{log_prefix}: Unable to store value in db: {e}");
+                                    }
+                                }
+                            }
                         }
                     }
                 }
-                Ok(recvd_point) => match recvd_point.clone().value {
-                    None => {
-                        info!("{log_prefix}: Received none on match recvd_point.clone().value -- is this ok?")
-                    }
-                    Some(val) => {
-                        let v = recvd_point.clone();
-                        let payloads =
-                            generate_payloads(unit, &recvd_point, &requested_point_to_check, &val)
-                                .await;
-
-                        last_report.insert(uniqueid, Utc::now());
-                        for payload in payloads {
-                            if requested_point_to_check.homeassistant_discovery {
-                                let _ = tx
-                                    .send(IPCMessage::Outbound(PublishMessage {
-                                        topic: payload.config_topic,
-                                        payload: Payload::Config(payload.config.clone()),
-                                    }))
-                                    .await;
-                            }
-
-                            let _ = tx
-                                .send(IPCMessage::Outbound(PublishMessage {
-                                    topic: payload.state_topic,
-                                    payload: Payload::CurrentState(payload.state.clone()),
-                                }))
-                                .await;
-                            if let Err(e) =
-                                cull_records_to(payload.config.clone().unique_id, CULL_HISTORY_ROWS)
-                                    .await
-                            {
-                                warn!("{log_prefix}: Couldn't cull history for this point: {e}");
-                            };
-                            if let Err(e) =
-                                write_payload_history(payload.config, payload.state).await
-                            {
-                                warn!("{log_prefix}: Unable to store value in db: {e}");
-                            }
-                        }
-                    }
-                },
             }
             //endregion
         }
