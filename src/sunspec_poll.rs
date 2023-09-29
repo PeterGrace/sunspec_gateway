@@ -123,11 +123,95 @@ pub async fn poll_loop(
                                                     InputType::Select(_) => {
                                                         warn!("{log_prefix}: We can't find a symbol for this selection.  Received {}", inmsg.payload);
                                                     }
-                                                    InputType::Switch(_) => {
-                                                        warn!("{log_prefix}: We can't find a symbol for this switch value.  Received {}", inmsg.payload);
+                                                    InputType::Switch(sw) => {
+                                                        if let Ok(on_val) = sw.on.parse::<u32>() {
+                                                            if let Ok(off_val) =
+                                                                sw.off.parse::<u32>()
+                                                            {
+                                                                if let Ok(payload_val) =
+                                                                    inmsg.payload.parse::<u32>()
+                                                                {
+                                                                    // phew, we have all the ducks in a row
+                                                                    if payload_val == on_val
+                                                                        || payload_val == off_val
+                                                                    {
+                                                                        let md = unit
+                                                                            .conn
+                                                                            .models
+                                                                            .get(&mid)
+                                                                            .unwrap();
+                                                                        match unit
+                                                                            .conn
+                                                                            .clone()
+                                                                            .set_point(
+                                                                                md.clone(),
+                                                                                &inmsg.point_name,
+                                                                                ValueType::Integer(
+                                                                                    payload_val
+                                                                                        .try_into()
+                                                                                        .unwrap(),
+                                                                                ),
+                                                                            )
+                                                                            .await
+                                                                        {
+                                                                            Ok(_) => {
+                                                                                // TODO maybe I can immediately reschedule a check of the point to get it refreshed?
+                                                                                info!(
+                                                        "Value successfully sent {}:{}",
+                                                        inmsg.point_name, payload_val
+                                                    );
+                                                                            }
+                                                                            Err(e) => {
+                                                                                error!("Couldn't set point: {e}");
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                        //warn!("{log_prefix}: We can't find a symbol for this switch value.  Received {}", inmsg.payload);
                                                     }
                                                     InputType::Button(val) => {
-                                                        warn!("{log_prefix}: We can't find a symbol for this button payload.  Received {}", inmsg.payload);
+                                                        if let Ok(off_val) = val.parse::<u32>() {
+                                                            if let Ok(payload_val) =
+                                                                inmsg.payload.parse::<u32>()
+                                                            {
+                                                                // phew, we have all the ducks in a row
+                                                                if payload_val == off_val {
+                                                                    let md = unit
+                                                                        .conn
+                                                                        .models
+                                                                        .get(&mid)
+                                                                        .unwrap();
+                                                                    match unit
+                                                                        .conn
+                                                                        .clone()
+                                                                        .set_point(
+                                                                            md.clone(),
+                                                                            &inmsg.point_name,
+                                                                            ValueType::Integer(
+                                                                                payload_val
+                                                                                    .try_into()
+                                                                                    .unwrap(),
+                                                                            ),
+                                                                        )
+                                                                        .await
+                                                                    {
+                                                                        Ok(_) => {
+                                                                            // TODO maybe I can immediately reschedule a check of the point to get it refreshed?
+                                                                            info!(
+                                                        "Value successfully sent {}:{}",
+                                                        inmsg.point_name, payload_val
+                                                    );
+                                                                        }
+                                                                        Err(e) => {
+                                                                            error!("Couldn't set point: {e}");
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                        //warn!("{log_prefix}: We can't find a symbol for this button payload.  Received {}", inmsg.payload);
                                                     }
                                                     InputType::Number(val) => {
                                                         debug!("Inbound payload is a number!");

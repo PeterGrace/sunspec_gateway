@@ -123,6 +123,11 @@ models:
       state_class: "measurement"
       precision: 1
   "802":
+    - point: "AlmRst"
+      display_name: "Battery Alarm(s) Reset"
+      readwrite: true
+      inputs:
+        button: "1"
     - point: "SoCMin"
       interval: 60
       readwrite: true
