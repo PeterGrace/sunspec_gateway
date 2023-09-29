@@ -1,13 +1,17 @@
 use crate::consts::*;
 use crate::monitored_point::MonitoredPoint;
 use crate::payload::DeviceInfo;
-use anyhow::bail;
+use crate::{GatewayError, SHUTDOWN};
+use anyhow::{bail, Error};
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::time::Duration;
 use sunspec_rs::model_data::ModelData;
 use sunspec_rs::sunspec_connection::{SunSpecConnection, SunSpecPointError};
 use sunspec_rs::sunspec_data::SunSpecData;
 use sunspec_rs::sunspec_models::ValueType;
+use tokio::task;
+use tokio::time::sleep;
 
 #[derive(Debug)]
 pub struct SunSpecUnit {
@@ -21,28 +25,60 @@ pub struct SunSpecUnit {
 }
 
 impl SunSpecUnit {
-    pub async fn new(addr: String, slave_id: String) -> anyhow::Result<Self> {
+    pub async fn new(addr: String, slave_id: String) -> Result<Self, GatewayError> {
         let sid: u8 = match slave_id.parse() {
             Ok(id) => id,
             Err(e) => {
-                bail!("Couldn't parse slave_id {slave_id}: {e}");
+                return Err(GatewayError::Error(format!(
+                    "Couldn't parse slave_id {slave_id}: {e}"
+                )));
             }
         };
         let mut conn = match SunSpecConnection::new(addr.clone(), Some(sid), false).await {
             Ok(c) => c,
             Err(e) => {
-                bail!("Couldn't create connection to {addr} - {sid}: {e}");
+                return Err(GatewayError::Error(format!(
+                    "Couldn't create connection to {addr} - {sid}: {e}"
+                )));
             }
         };
         let data: SunSpecData = SunSpecData::default();
-        match conn.clone().populate_models(&data).await {
-            Ok(m) => conn.models = m.clone(),
-            Err(e) => bail!("Can't populate models: {e}"),
-        };
 
+        let populate_conn = conn.clone();
+        let populate_data = data.clone();
+        let task = task::spawn(async move {
+            match populate_conn.populate_models(&populate_data).await {
+                Ok(m) => Ok(m.clone()),
+                Err(e) => bail!("Can't populate models: {e}"),
+            }
+        });
+
+        while !task.is_finished() {
+            if let Some(shutting_down) = SHUTDOWN.get() {
+                if *shutting_down {
+                    info!("Shutdown received while populate_models running, exiting now");
+                    task.abort();
+                    return Err(GatewayError::ExitingThread);
+                }
+            }
+            sleep(Duration::from_millis(100)).await;
+        }
+        match task.await {
+            Ok(taskresult) => match taskresult {
+                Ok(model) => conn.models = model.clone(),
+                Err(e) => {
+                    return Err(GatewayError::Error(format!("{e}")));
+                }
+            },
+            Err(e) => {
+                return Err(GatewayError::Error(format!("{e}")));
+            }
+        }
         let mut common = match conn.models.get(&COMMON_MODEL_ID) {
             None => {
-                bail!("Couldn't get model definition for common");
+                return Err(GatewayError::Error(format!(
+                    "Couldn't get model definition for common"
+                )));
             }
             Some(m) => m,
         };
@@ -60,11 +96,13 @@ impl SunSpecUnit {
                 if let ValueType::String(str) = p.value.unwrap() {
                     str
                 } else {
-                    anyhow::bail!("Received a point that wasn't a string for manufacturer.");
+                    return Err(GatewayError::Error(format!(
+                        "Received a point that wasn't a string for manufacturer."
+                    )));
                 }
             }
             Err(e) => {
-                anyhow::bail!("fatal error, aborting: {e}")
+                return Err(GatewayError::Error(format!("fatal error, aborting: {e}")));
             }
         };
         let serial_number = match conn.clone().get_point(common.clone(), "SN").await {
@@ -72,22 +110,26 @@ impl SunSpecUnit {
                 if let ValueType::String(str) = p.value.unwrap() {
                     str
                 } else {
-                    anyhow::bail!("Received a point that wasn't a string for serial number.");
+                    return Err(GatewayError::Error(format!(
+                        "Received a point that wasn't a string for serial number."
+                    )));
                 }
             }
-            Err(e) => anyhow::bail!(e),
+            Err(e) => {
+                return Err(GatewayError::Error(format!("{e}")));
+            }
         };
         let physical_model = match conn.clone().get_point(common.clone(), "Md").await {
             Ok(p) => {
                 if let ValueType::String(str) = p.value.unwrap() {
                     str
                 } else {
-                    anyhow::bail!(
+                    return Err(GatewayError::Error(format!(
                         "Received a point that wasn't a string for physical device model name."
-                    );
+                    )));
                 }
             }
-            Err(e) => anyhow::bail!(e),
+            Err(e) => return Err(GatewayError::Error(format!("{e}"))),
         };
         device_info.model = physical_model.clone();
         device_info.manufacturer = manufacturer.clone();

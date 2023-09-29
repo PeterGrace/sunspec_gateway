@@ -48,7 +48,7 @@ use std::process;
 use std::sync::Arc;
 use std::time::Duration;
 use sunspec_unit::SunSpecUnit;
-use tokio::sync::{broadcast, mpsc, Mutex, RwLock};
+use tokio::sync::{broadcast, mpsc, Mutex, OnceCell, RwLock};
 use tokio::task::JoinSet;
 use tokio::time::{sleep, timeout};
 use tracing_log::AsTrace;
@@ -69,6 +69,7 @@ pub enum GatewayError {
 }
 
 lazy_static! {
+    static ref SHUTDOWN: OnceCell<bool> = OnceCell::new();
     static ref TASK_PILE: RwLock<JoinSet<Result<(),GatewayError>>> = RwLock::new(JoinSet::<Result<(),GatewayError>>::new());
 
 
@@ -128,6 +129,7 @@ async fn main() {
     let bcasttx = broadcast_tx.clone();
     ctrlc::set_handler(move || {
         println!("Received Ctrl-C, communicating to threads to stop");
+        let _ = SHUTDOWN.set(true);
         bcasttx.send(IPCMessage::Shutdown);
     });
 
