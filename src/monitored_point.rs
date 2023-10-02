@@ -32,6 +32,12 @@ pub struct MonitoredPoint {
     pub input_type: Option<InputType>,
     /// this point is only for input and cannot be read.
     pub input_only: Option<bool>,
+    /// the minimum value we expect to see for this point.
+    pub value_min: Option<f32>,
+    /// the maximum value we expect to see for this point.
+    pub value_max: Option<f32>,
+    /// how many standard deviations we'll allow before considering value nonsensical
+    pub check_deviations: Option<u16>,
 }
 
 impl MonitoredPoint {
@@ -73,6 +79,9 @@ impl MonitoredPoint {
             scale_factor: pc.scale_factor,
             input_type: pc.inputs,
             input_only: pc.input_only,
+            value_min: pc.value_min,
+            value_max: pc.value_max,
+            check_deviations: pc.check_deviations,
         })
     }
 }

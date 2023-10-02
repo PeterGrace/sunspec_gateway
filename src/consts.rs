@@ -3,6 +3,8 @@ pub const MPSC_BUFFER_SIZE: usize = 100_usize;
 pub const MINIMUM_POLL_INTERVAL_SECS: u16 = 5_u16;
 pub const CULL_HISTORY_ROWS: u8 = 50_u8;
 
+pub const CHECK_DEVIATIONS_COUNT: u16 = 10_u16;
+
 // we won't let points get checked faster than every 10 seconds.
 // if we change this, the modbus could get saturated very quickly
 pub const LOWER_LIMIT_INTERVAL: u64 = 10_u64;
