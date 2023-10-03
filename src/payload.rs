@@ -1,7 +1,7 @@
 use crate::config_structs::InputType;
 use crate::consts::*;
 use crate::monitored_point::MonitoredPoint;
-use crate::state_mgmt::check_needs_adjust;
+use crate::state_mgmt::{check_needs_adjust, get_history};
 use crate::sunspec_unit::SunSpecUnit;
 use chrono::{DateTime, Utc};
 use num_traits::pow::Pow;
@@ -21,7 +21,7 @@ pub struct DeviceInfo {
 #[derive(Deserialize, Serialize, Debug, Default, Clone)]
 #[serde(untagged)]
 pub enum PayloadValueType {
-    Float(f64),
+    Float(f32),
     Int(i64),
     String(String),
     Boolean(bool),
@@ -180,7 +180,7 @@ pub async fn generate_payloads(
 
                 // if we are employing a scale factor on an int, it becomes a float
                 if let Some(scale) = monitored_point.scale_factor {
-                    let mut scaled_value: f64 = 0.0;
+                    let mut scaled_value: f32 = 0.0;
                     if scale >= 0 {
                         scaled_value = (*int as f32 * (f32::pow(10.0, scale.abs() as f32))).into();
                     } else {
@@ -191,6 +191,52 @@ pub async fn generate_payloads(
                     } else {
                         config_payload.suggested_display_precision = DEFAULT_DISPLAY_PRECISION;
                     };
+                    if let Some(minimum) = monitored_point.value_min {
+                        if scaled_value < minimum {
+                            warn!("{log_prefix}: {scaled_value} is less than the minimum value specified ({minimum})");
+                            return vec![];
+                        }
+                    }
+                    if let Some(maximum) = monitored_point.value_max {
+                        if scaled_value > maximum {
+                            warn!("{log_prefix}: {scaled_value} is greater than the maximum value specified ({maximum})");
+                            return vec![];
+                        }
+                    }
+                    match get_history(format!("{sn}.{model}.{point_name}")).await {
+                        Ok(ag) => {
+                            let mut deviations: u16 = CHECK_DEVIATIONS_COUNT;
+                            if monitored_point.check_deviations.is_some() {
+                                deviations = monitored_point.check_deviations.unwrap();
+                            }
+                            let mut stdev_checked: f32 = 0.0;
+                            if ag.stdev.abs() < 1.0 {
+                                stdev_checked = ag.stdev.abs() + 1.0
+                            } else {
+                                stdev_checked = ag.stdev.abs()
+                            }
+                            if scaled_value < ag.min {
+                                // our point is lower than the lowest seen so far
+                                if scaled_value.abs()
+                                    > (ag.median + stdev_checked * deviations as f32)
+                                {
+                                    warn!("{log_prefix}: {scaled_value} is more than {deviations} deviations away from median. {ag:#?}");
+                                }
+                            }
+                            if scaled_value > ag.max {
+                                // our point is the highest point measured so far
+                                if scaled_value.abs()
+                                    > (ag.median + stdev_checked * deviations as f32)
+                                {
+                                    warn!("{log_prefix}: {scaled_value} is more than {deviations} deviations away from median. {ag:#?}");
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            warn!("{log_prefix}: Error retrieving historical results, assuming point is valid: {e}");
+                        }
+                    };
+
                     state_payload.value = PayloadValueType::Float(scaled_value)
                 } else {
                     state_payload.value = PayloadValueType::Int(*int as i64)
@@ -209,7 +255,7 @@ pub async fn generate_payloads(
                 } else {
                     config_payload.native_uom = point_data.unwrap().units.clone();
                 }
-                let mut scaled_value: f64 = 0.0;
+                let mut scaled_value: f32 = 0.0;
                 if let Some(scale) = monitored_point.scale_factor {
                     if scale >= 0 {
                         scaled_value = (float * f32::pow(10.0, scale.abs() as f32)).into();
@@ -217,8 +263,52 @@ pub async fn generate_payloads(
                         scaled_value = (float / f32::pow(10.0, scale.abs() as f32)).into();
                     }
                 } else {
-                    scaled_value = *float as f64;
+                    scaled_value = *float;
                 }
+                if let Some(minimum) = monitored_point.value_min {
+                    if scaled_value < minimum {
+                        warn!("{log_prefix}: {scaled_value} is less than the minimum value specified ({minimum})");
+                        return vec![];
+                    }
+                }
+                if let Some(maximum) = monitored_point.value_max {
+                    if scaled_value > maximum {
+                        warn!("{log_prefix}: {scaled_value} is greater than the maximum value specified ({maximum})");
+                        return vec![];
+                    }
+                }
+                match get_history(format!("{sn}.{model}.{point_name}")).await {
+                    Ok(ag) => {
+                        let mut deviations: u16 = CHECK_DEVIATIONS_COUNT;
+                        if monitored_point.check_deviations.is_some() {
+                            deviations = monitored_point.check_deviations.unwrap();
+                        }
+                        let mut stdev_checked: f32 = 0.0;
+                        if ag.stdev.abs() < 1.0 {
+                            stdev_checked = ag.stdev.abs() + 1.0
+                        } else {
+                            stdev_checked = ag.stdev.abs()
+                        }
+                        if scaled_value < ag.min {
+                            // our point is lower than the lowest seen so far
+                            if scaled_value.abs() > (ag.median + stdev_checked * deviations as f32)
+                            {
+                                warn!("{log_prefix}: {scaled_value} is more than {deviations} deviations away from median. {ag:#?}");
+                            }
+                        }
+                        if scaled_value > ag.max {
+                            // our point is the highest point measured so far
+                            if scaled_value.abs() > (ag.median + stdev_checked * deviations as f32)
+                            {
+                                warn!("{log_prefix}: {scaled_value} is more than {deviations} deviations away from median. {ag:#?}");
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        warn!("{log_prefix}: Error retrieving historical results, assuming point is valid: {e}");
+                    }
+                };
+
                 state_payload.value = PayloadValueType::Float(scaled_value);
                 if let Some(literal) = &point_data.unwrap().literal {
                     if literal.label.is_some() {

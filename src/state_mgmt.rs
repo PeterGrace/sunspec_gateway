@@ -1,6 +1,7 @@
 use crate::payload::{HAConfigPayload, StatePayload};
 use anyhow::{bail, Result};
 use lazy_static::lazy_static;
+
 use sqlx::database::HasArguments;
 use sqlx::encode::IsNull;
 use sqlx::pool::PoolConnection;
@@ -20,6 +21,16 @@ pub struct point_history {
     uniqueid: String,
     value: String,
     timestamp: String,
+}
+
+#[derive(Default, Debug, Clone, FromRow)]
+pub struct AggregatedMeasurements {
+    pub min: f32,
+    pub max: f32,
+    pub avg: f32,
+    pub median: f32,
+    pub count: i16,
+    pub stdev: f32,
 }
 
 //const DB_URL: &str = "sqlite://sunspec_gateway.db";
@@ -55,7 +66,8 @@ pub async fn prepare_to_database() -> anyhow::Result<()> {
         bail!(e);
     }
     let url = DB_URL.get().unwrap();
-    let conn_options = SqliteConnectOptions::from_url(&Url::from_str(url).unwrap()).unwrap();
+    let conn_options =
+        SqliteConnectOptions::from_url(&Url::from_str(url).unwrap())?.extension("./stats");
     //.log_statements(LevelFilter::Info);
     let pool = match SqlitePool::connect_with(conn_options).await {
         Ok(pool) => pool,
@@ -213,4 +225,33 @@ pub async fn write_payload_history(
             bail!(e);
         }
     }
+}
+
+pub async fn get_history(uniqueid: String) -> anyhow::Result<AggregatedMeasurements> {
+    let pool = DB_POOL.get().unwrap();
+
+    let values: AggregatedMeasurements = match sqlx::query_as(
+        r#"
+    SELECT
+    COUNT(value) as count,
+    MIN(CAST(value as real)) as min,
+    MAX(CAST(value as real)) as max,
+    PERCENTILE(CAST(value as real),50) as median,
+    AVG(CAST(value as real)) as avg,
+    STDDEV(CAST(value as real)) as stdev
+    from point_history
+    WHERE uniqueid = $1
+    "#,
+    )
+    .bind(uniqueid)
+    .fetch_one(pool)
+    .await
+    {
+        Ok(s) => s,
+        Err(e) => {
+            bail!(e)
+        }
+    };
+
+    Ok(values)
 }
