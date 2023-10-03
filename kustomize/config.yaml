@@ -20,16 +20,22 @@ models:
       device_class: "voltage"
       state_class: "measurement"
       precision: 1
+      value_min: 0.0
+      value_max: 175
     - point: "PhVphB"
       interval: 15
       device_class: "voltage"
       state_class: "measurement"
       precision: 1
+      value_min: 0.0
+      value_max: 175
     - point: "W"
       interval: 15
       device_class: "power"
       state_class: "measurement"
       precision: 1
+      value_min: -10000.0
+      value_max: 10000.0
     - point: "Hz"
       interval: 15
       device_class: "frequency"
@@ -53,6 +59,8 @@ models:
       state_class: "measurement"
       precision: 1
       uom: "%"
+      value_min: -100.0
+      value_max: 100.0
     - point: "WH"
       interval: 60
       device_class: "energy"
@@ -63,30 +71,40 @@ models:
       device_class: "voltage"
       state_class: "measurement"
       precision: 1
+      value_min: 0.0
+      value_max: 500
     - point: "TmpCab"
       interval: 30
       device_class: "temperature"
       state_class: "measurement"
       precision: 2
       uom: "°C"
+      value_min: 0
+      value_max: 100
     - point: "TmpTrns"
       interval: 30
       device_class: "temperature"
       state_class: "measurement"
       precision: 2
       uom: "°C"
+      value_min: 0
+      value_max: 100
     - point: "TmpOt"
       interval: 30
       device_class: "temperature"
       state_class: "measurement"
       precision: 2
       uom: "°C"
+      value_min: 0
+      value_max: 100
     - point: "TmpSnk"
       interval: 30
       device_class: "temperature"
       state_class: "measurement"
       precision: 2
       uom: "°C"
+      value_min: 0
+      value_max: 100
     - point: "St"
       interval: 60
       display_name: "Inverter Status"
@@ -102,6 +120,8 @@ models:
       state_class: "measurement"
       precision: 2
       uom: "°C"
+      value_min: 0
+      value_max: 100
     - point: "DCWh"
       interval: 60
       device_class: "energy"
@@ -112,16 +132,23 @@ models:
       device_class: "voltage"
       state_class: "measurement"
       precision: 1
+      value_min: 0
+      value_max: 500
     - point: "DCA"
       interval: 60
       device_class: "current"
       state_class: "measurement"
       precision: 1
+      value_min: 0
+      value_max: 200
+      check_deviations: 20
     - point: "DCW"
       interval: 60
       device_class: "power"
       state_class: "measurement"
       precision: 1
+      value_min: 0
+      value_max: 7600
   "802":
     - point: "AlmRst"
       interval: 30
@@ -171,61 +198,81 @@ models:
       precision: 1
       device_class: "voltage"
       state_class: "measurement"
+      value_min: 0
+      value_max: 300
     - point: "CellVMax"
       interval: 60
       precision: 1
       device_class: "voltage"
       state_class: "measurement"
+      value_min: 0
+      value_max: 300
     - point: "W"
       interval: 60
       precision: 1
       device_class: "power"
       state_class: "measurement"
+      value_min: 0
+      value_max: 5000
     - point: "SoC"
       device_class: "battery"
       state_class: "measurement"
       interval: 60
       precision: 2
       uom: "%"
+      value_min: 0
+      value_max: 100
     - point: "SoH"
       device_class: "battery"
       state_class: "measurement"
       interval: 60
       precision: 2
       uom: "%"
+      value_min: 0
+      value_max: 100
   "804":
     - point: "SoC"
       interval: 60
       device_class: "battery"
       state_class: "measurement"
       uom: "%"
+      value_min: 0
+      value_max: 100
+      check_deviations: 30
     - point: "SoH"
       interval: 60
       device_class: "battery"
       state_class: "measurement"
       uom: "%"
+      value_min: 0
+      value_max: 100
     - point: "A"
       interval: 15
       device_class: "current"
       state_class: "measurement"
       precision: 1
+      value_min: -200
+      value_max: 200
+      check_deviations: 30
     - point: "V"
       interval: 15
       device_class: "voltage"
       state_class: "measurement"
       precision: 1
+      value_min: 0
+      value_max: 300
   "64200":
     - point: "SysMd"
       interval: 60
       readwrite: true
       inputs:
         select:
-          - "SAFETY_SHUTDOWN"
-          - "GRID_CONNECT"
+          - "GRID_TIE"
           - "SELF_SUPPLY"
           - "CLEAN_BACKUP"
           - "PRIORITY_BACKUP"
-          - "FULL_EXPORT"
+          - "SAFETY_SHUTDOWN"
+          - "SELL"
   "64204":
     - point: "Px1"
       interval: 15
@@ -233,12 +280,16 @@ models:
       state_class: "measurement"
       precision: 1
       display_name: "Power, Phase A"
+      value_min: -10000
+      value_max: 10000
     - point: "Px2"
       interval: 15
       device_class: "power"
       state_class: "measurement"
       precision: 1
       display_name: "Power, Phase B"
+      value_min: -10000
+      value_max: 10000
     - point: "Whx"
       interval: 15
       device_class: "energy"
@@ -261,6 +312,8 @@ models:
       state_class: "measurement"
       display_name: "Power"
       precision: 1
+      value_min: 0
+      value_max: 10000
     - point: "E"
       interval: 15
       device_class: "energy"
@@ -272,17 +325,25 @@ models:
       device_class: "current"
       state_class: "measurement"
       precision: 1
+      value_min: -100 
+      value_max: 100
+      check_deviations: 100
     - point: "V"
       interval: 15
       device_class: "voltage"
       state_class: "measurement"
       precision: 1
+      value_min: 0
+      value_max: 500
+      check_deviations: 30
     - point: "T"
       interval: 30
       device_class: "temperature"
       state_class: "measurement"
       precision: 2
       uom: "°C"
+      value_min: 0
+      value_max: 100
     - point: "Ev"
       display_name: "Last REbus Event"
       interval: 60
@@ -301,6 +362,8 @@ models:
       device_class: "power"
       state_class: "measurement"
       display_name: "CT Clamp Watts Measurement"
+      value_min: -20000
+      value_max: 20000
     - point: "WhIn"
       interval: 60
       precision: 0
@@ -363,12 +426,17 @@ models:
       state_class: "measurement"
       precision: 1
       uom: "A"
+      value_min: 0
+      value_max: 100
+      check_deviations: 30
     - point: "Vin"
       interval: 15
       device_class: "voltage"
       state_class: "measurement"
       precision: 1
       uom: "V"
+      value_min: 0
+      value_max: 300
   "64263":
     - point: "Enable"
       interval: 60
@@ -394,8 +462,12 @@ models:
       interval: 60
     - point: "InstalledCount"
       interval: 300
+      value_min: 0
+      value_max: 6
     - point: "DetectedCount"
       interval: 300
+      value_min: 0
+      value_max: 6
     - point: "Vlow"
       interval: 300
       device_class: "voltage"
@@ -403,6 +475,8 @@ models:
       precision: 1
       uom: "V"
       scale_factor: -3
+      value_min: 0
+      value_max: 250
     - point: "VocCompensated"
       interval: 300
       device_class: "voltage"
@@ -410,6 +484,8 @@ models:
       precision: 1
       uom: "V"
       scale_factor: -3
+      value_min: 0
+      value_max: 250
     - point: "TimesCountResultWasSuccess"
       interval: 300
       state_class: "total_increasing"

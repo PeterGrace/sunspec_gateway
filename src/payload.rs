@@ -203,6 +203,40 @@ pub async fn generate_payloads(
                             return vec![];
                         }
                     }
+                    match get_history(format!("{sn}.{model}.{point_name}")).await {
+                        Ok(ag) => {
+                            let mut deviations: u16 = CHECK_DEVIATIONS_COUNT;
+                            if monitored_point.check_deviations.is_some() {
+                                deviations = monitored_point.check_deviations.unwrap();
+                            }
+                            let mut stdev_checked: f32 = 0.0;
+                            if ag.stdev.abs() < 1.0 {
+                                stdev_checked = ag.stdev.abs() + 1.0
+                            } else {
+                                stdev_checked = ag.stdev.abs()
+                            }
+                            if scaled_value < ag.min {
+                                // our point is lower than the lowest seen so far
+                                if scaled_value.abs()
+                                    > (ag.median + stdev_checked * deviations as f32)
+                                {
+                                    warn!("{log_prefix}: {scaled_value} is more than {deviations} deviations away from median. {ag:#?}");
+                                }
+                            }
+                            if scaled_value > ag.max {
+                                // our point is the highest point measured so far
+                                if scaled_value.abs()
+                                    > (ag.median + stdev_checked * deviations as f32)
+                                {
+                                    warn!("{log_prefix}: {scaled_value} is more than {deviations} deviations away from median. {ag:#?}");
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            warn!("{log_prefix}: Error retrieving historical results, assuming point is valid: {e}");
+                        }
+                    };
+
                     state_payload.value = PayloadValueType::Float(scaled_value)
                 } else {
                     state_payload.value = PayloadValueType::Int(*int as i64)
@@ -255,7 +289,6 @@ pub async fn generate_payloads(
                         } else {
                             stdev_checked = ag.stdev.abs()
                         }
-
                         if scaled_value < ag.min {
                             // our point is lower than the lowest seen so far
                             if scaled_value.abs() > (ag.median + stdev_checked * deviations as f32)

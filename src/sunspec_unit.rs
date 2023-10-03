@@ -137,6 +137,7 @@ impl SunSpecUnit {
         device_info.identifiers = vec![serial_number.clone()];
 
         info!("Initialized {manufacturer}/{physical_model} with SN {serial_number}");
+        debug!("Models: {:#?}", conn.models.keys());
 
         Ok(SunSpecUnit {
             slave_id: sid,
