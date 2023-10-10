@@ -255,7 +255,7 @@ async fn main() {
                             ));
                         }
                     };
-                    info!("We received a PleaseReconnect message for {addr}/{slave}");
+                    debug!("We received a PleaseReconnect message for {addr}/{slave}");
                     let mut tasks = TASK_PILE.write().await;
                     tasks.spawn(async move {
                         match poll_loop(&ssu, tx, bcast_rx).await {
@@ -356,7 +356,7 @@ async fn main() {
             die("MQTT thread exited.");
         }
 
-        let _ = sleep(Duration::from_millis(100)).await;
+        let _ = sleep(Duration::from_millis(GENERIC_WAIT_MILLIS)).await;
     }
     //endregion
 }

@@ -338,7 +338,7 @@ pub async fn poll_loop(
                 match unit
                     .conn
                     .clone()
-                    .get_point(md.unwrap().clone(), &requested_point_to_check.name)
+                    .get_point(md.unwrap().clone(), &requested_point_to_check.name, None)
                     .await
                 {
                     Err(e) => {
@@ -363,7 +363,8 @@ pub async fn poll_loop(
                                     ))
                                     .await;
                                 // lets wait two seconds for the ipc to process.
-                                let _ = sleep(Duration::from_secs(2)).await;
+                                let _ =
+                                    sleep(Duration::from_millis(MQTT_PROCESSING_PAD_MILLIS)).await;
                                 return Err(GatewayError::CommunicationError(e.to_string()));
                             }
                         }
@@ -423,6 +424,6 @@ pub async fn poll_loop(
         }
 
         debug!(%sn, "Device tick");
-        let _ = sleep(Duration::from_secs(MINIMUM_POLL_INTERVAL_SECS.into())).await;
+        let _ = sleep(Duration::from_secs(MINIMUM_QUERY_INTERVAL_SECS.into())).await;
     }
 }

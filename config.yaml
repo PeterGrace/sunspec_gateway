@@ -149,6 +149,7 @@ models:
       precision: 1
       value_min: 0
       value_max: 7600
+      check_deviations: 20
   "802":
     - point: "AlmRst"
       interval: 30
@@ -212,8 +213,8 @@ models:
       precision: 1
       device_class: "power"
       state_class: "measurement"
-      value_min: 0
-      value_max: 5000
+      value_min: -10000
+      value_max: 10000
     - point: "SoC"
       device_class: "battery"
       state_class: "measurement"
@@ -238,7 +239,6 @@ models:
       uom: "%"
       value_min: 0
       value_max: 100
-      check_deviations: 30
     - point: "SoH"
       interval: 60
       device_class: "battery"
@@ -253,14 +253,13 @@ models:
       precision: 1
       value_min: -200
       value_max: 200
-      check_deviations: 30
     - point: "V"
       interval: 15
       device_class: "voltage"
       state_class: "measurement"
       precision: 1
       value_min: 0
-      value_max: 300
+      value_max: 450
   "64200":
     - point: "SysMd"
       interval: 60
@@ -291,16 +290,16 @@ models:
       value_min: -10000
       value_max: 10000
     - point: "Whx"
-      interval: 15
+      interval: 60
       device_class: "energy"
       state_class: "total_increasing"
-      display_name: "Total Exported Watts"
+      display_name: "Total Exported Watt-Hours"
       precision: 1
     - point: "Whin"
-      interval: 15
+      interval: 60
       device_class: "energy"
       precision: 1
-      display_name: "Total Imported Watts"
+      display_name: "Total Imported Watt-Hours"
       state_class: "total_increasing"
   "64207":
     - point: "St"
@@ -327,7 +326,6 @@ models:
       precision: 1
       value_min: -100 
       value_max: 100
-      check_deviations: 100
     - point: "V"
       interval: 15
       device_class: "voltage"
@@ -335,7 +333,6 @@ models:
       precision: 1
       value_min: 0
       value_max: 500
-      check_deviations: 30
     - point: "T"
       interval: 30
       device_class: "temperature"
@@ -428,7 +425,6 @@ models:
       uom: "A"
       value_min: 0
       value_max: 100
-      check_deviations: 30
     - point: "Vin"
       interval: 15
       device_class: "voltage"

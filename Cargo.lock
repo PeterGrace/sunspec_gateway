@@ -2398,6 +2398,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "reservoir-sampling"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a527dbc0169051c57190487c3acd22671ab84d165213abc44066297ce6a1de6e"
+dependencies = [
+ "getrandom",
+ "rand",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "ring"
 version = "0.16.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3141,6 +3152,7 @@ dependencies = [
  "opentelemetry-semantic-conventions",
  "prometheus",
  "rand",
+ "reservoir-sampling",
  "rumqttc",
  "serde",
  "serde_json",
@@ -3160,7 +3172,7 @@ dependencies = [
 
 [[package]]
 name = "sunspec_rs"
-version = "0.5.2"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "async-recursion",
@@ -3169,6 +3181,7 @@ dependencies = [
  "clap",
  "clap-verbosity-flag",
  "lazy_static",
+ "num-traits",
  "prometheus",
  "serde",
  "serde-xml-rs",

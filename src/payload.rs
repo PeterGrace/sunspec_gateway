@@ -215,20 +215,13 @@ pub async fn generate_payloads(
                             } else {
                                 stdev_checked = ag.stdev.abs()
                             }
-                            if scaled_value < ag.min {
+                            if scaled_value < ag.min || scaled_value > ag.max {
                                 // our point is lower than the lowest seen so far
-                                if scaled_value.abs()
-                                    > (ag.median + stdev_checked * deviations as f32)
+                                let delta_median = scaled_value - ag.median;
+                                if delta_median.abs()
+                                    > (ag.median + (stdev_checked * deviations as f32))
                                 {
-                                    warn!("{log_prefix}: {scaled_value} is more than {deviations} deviations away from median. {ag:#?}");
-                                }
-                            }
-                            if scaled_value > ag.max {
-                                // our point is the highest point measured so far
-                                if scaled_value.abs()
-                                    > (ag.median + stdev_checked * deviations as f32)
-                                {
-                                    warn!("{log_prefix}: {scaled_value} is more than {deviations} deviations away from median. {ag:#?}");
+                                    warn!("{log_prefix}: {scaled_value} is {:#.02} deviations away from median. {ag:#?}",delta_median/stdev_checked);
                                 }
                             }
                         }
@@ -289,18 +282,13 @@ pub async fn generate_payloads(
                         } else {
                             stdev_checked = ag.stdev.abs()
                         }
-                        if scaled_value < ag.min {
+                        if scaled_value < ag.min || scaled_value > ag.max {
                             // our point is lower than the lowest seen so far
-                            if scaled_value.abs() > (ag.median + stdev_checked * deviations as f32)
+                            let delta_median = scaled_value - ag.median;
+                            if delta_median.abs()
+                                > (ag.median + (stdev_checked * deviations as f32))
                             {
-                                warn!("{log_prefix}: {scaled_value} is more than {deviations} deviations away from median. {ag:#?}");
-                            }
-                        }
-                        if scaled_value > ag.max {
-                            // our point is the highest point measured so far
-                            if scaled_value.abs() > (ag.median + stdev_checked * deviations as f32)
-                            {
-                                warn!("{log_prefix}: {scaled_value} is more than {deviations} deviations away from median. {ag:#?}");
+                                warn!("{log_prefix}: {scaled_value} is {:#.02} deviations away from median. {ag:#?}",delta_median/stdev_checked);
                             }
                         }
                     }
@@ -359,7 +347,7 @@ pub async fn generate_payloads(
                 match check_needs_adjust(updated_uniques).await {
                     Ok(stale) => {
                         if stale.len() > 0 {
-                            info!(
+                            debug!(
                                 "{log_prefix}: sending off for {} binary sensors",
                                 stale.len()
                             );
@@ -407,6 +395,7 @@ pub async fn generate_payloads(
                 // let concat = vec.join(", ");
                 // state_payload.value = PayloadValueType::String(concat)
             }
+            ValueType::Pad => {}
         }
     }
 

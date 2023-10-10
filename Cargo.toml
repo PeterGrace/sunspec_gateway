@@ -45,3 +45,4 @@ actix-web = {version="4.3.1", features=["rustls"]}
 actix-web-prom = "0.6.0"
 metrics-process = "1.0.12"
 ctrlc = "3.4.1"
+reservoir-sampling = "0.5.1"

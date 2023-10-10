@@ -2,6 +2,7 @@ use crate::payload::{HAConfigPayload, StatePayload};
 use anyhow::{bail, Result};
 use lazy_static::lazy_static;
 
+use reservoir_sampling::unweighted::l as res_l;
 use sqlx::database::HasArguments;
 use sqlx::encode::IsNull;
 use sqlx::pool::PoolConnection;
@@ -229,6 +230,24 @@ pub async fn write_payload_history(
 
 pub async fn get_history(uniqueid: String) -> anyhow::Result<AggregatedMeasurements> {
     let pool = DB_POOL.get().unwrap();
+
+    // let mut ts: Vec<f64> = vec![];
+    // let tsq= sqlx::query(
+    //     r#"
+    // SELECT CAST(value as real) as value
+    // FROM point_history
+    // WHERE uniqueid = $1
+    // ORDER BY timestamp desc
+    // "#
+    // )
+    //     .bind(uniqueid.clone())
+    //     .fetch_all(pool)
+    //     .await.unwrap();
+    //
+    // let _ = tsq.iter().map(|x| ts.push(x.get::<f64, &str>("value")));
+    // let mut resl: Vec<f64> = vec![];
+    // res_l(ts.into_iter(), resl.as_mut_slice());
+    // info!("Reservoir Samples: {:#?}", resl);
 
     let values: AggregatedMeasurements = match sqlx::query_as(
         r#"

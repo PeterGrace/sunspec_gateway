@@ -1,3 +1,4 @@
+use crate::consts::MQTT_POLL_INTERVAL_MILLIS;
 use crate::ipc::{IPCMessage, InboundMessage};
 use crate::metrics::MQTT_CONFIG_PAYLOADS_SENT;
 use crate::mqtt_connection::MqttConnection;
@@ -169,7 +170,7 @@ pub async fn mqtt_poll_loop(
 
         //endregion
         // trace!("mqtt tick");
-        let _ = sleep(Duration::from_millis(100)).await;
+        let _ = sleep(Duration::from_millis(MQTT_POLL_INTERVAL_MILLIS)).await;
     }
     Ok(())
 }
