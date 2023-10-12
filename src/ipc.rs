@@ -21,6 +21,7 @@ pub struct IPCError {
 }
 
 #[derive(Clone)]
+#[allow(dead_code)]
 pub enum IPCMessage {
     Inbound(InboundMessage),
     Outbound(PublishMessage),

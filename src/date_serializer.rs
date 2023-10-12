@@ -1,4 +1,4 @@
-use chrono::{DateTime, NaiveDateTime, SecondsFormat, Utc};
+use chrono::{DateTime, SecondsFormat, Utc};
 use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
 use std::str::FromStr;
 

@@ -1,22 +1,22 @@
 use crate::config_structs::InputType;
 use crate::consts::*;
-use crate::ipc::{IPCMessage, InboundMessage, PublishMessage};
+use crate::ipc::{IPCMessage, PublishMessage};
 use crate::monitored_point::MonitoredPoint;
 use crate::payload::generate_payloads;
-use crate::payload::{HAConfigPayload, Payload, PayloadValueType, StatePayload};
+use crate::payload::Payload;
 use crate::state_mgmt::{cull_records_to, write_payload_history};
 use crate::sunspec_unit::SunSpecUnit;
 use crate::{GatewayError, SETTINGS};
 use chrono::{DateTime, Utc};
 use rand::{thread_rng, Rng};
 use std::collections::HashMap;
-use sunspec_rs::model_data::ModelData;
+
 use sunspec_rs::sunspec_connection::SunSpecPointError;
-use sunspec_rs::sunspec_models::{Access, ValueType};
+use sunspec_rs::sunspec_models::ValueType;
 use tokio::sync::broadcast::error::TryRecvError;
 use tokio::sync::broadcast::Receiver;
 use tokio::sync::mpsc::Sender;
-use tokio::time::{sleep, Duration, Instant};
+use tokio::time::{sleep, Duration};
 
 pub async fn poll_loop(
     unit: &SunSpecUnit,
@@ -29,7 +29,7 @@ pub async fn poll_loop(
     let mut points: Vec<MonitoredPoint> = vec![];
     let mut last_report: HashMap<String, DateTime<Utc>> = HashMap::new();
     for (id, _) in unit.conn.models.iter() {
-        let mname = format!("{id}");
+        let _mname = format!("{id}");
         for (model, config_points) in config.models.iter() {
             for point in config_points {
                 match MonitoredPoint::new(model.clone(), point.clone()) {
@@ -217,8 +217,8 @@ pub async fn poll_loop(
                                                         debug!("Inbound payload is a number!");
                                                         match inmsg.payload.parse::<i32>() {
                                                             Ok(parsed) => {
-                                                                if (parsed >= val.min
-                                                                    && parsed <= val.max)
+                                                                if parsed >= val.min
+                                                                    && parsed <= val.max
                                                                 {
                                                                     let md = unit
                                                                         .conn
@@ -280,7 +280,7 @@ pub async fn poll_loop(
                     TryRecvError::Closed => {
                         panic!("Broadcast channel closed?")
                     }
-                    TryRecvError::Lagged(lag) => {
+                    TryRecvError::Lagged(_lag) => {
                         warn!("broadcast channel is lagged: {e}")
                     }
                 },
@@ -375,7 +375,7 @@ pub async fn poll_loop(
                                 info!("{log_prefix}: Received none on match recvd_point.clone().value -- is this ok?")
                             }
                             Some(val) => {
-                                let v = recvd_point.clone();
+                                let _v = recvd_point.clone();
                                 let payloads = generate_payloads(
                                     unit,
                                     Some(&recvd_point),

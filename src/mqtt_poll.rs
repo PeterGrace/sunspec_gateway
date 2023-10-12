@@ -3,12 +3,11 @@ use crate::ipc::{IPCMessage, InboundMessage};
 use crate::metrics::MQTT_CONFIG_PAYLOADS_SENT;
 use crate::mqtt_connection::MqttConnection;
 use crate::payload::Payload;
-use crate::{payload, GatewayError};
+use crate::GatewayError;
 use rumqttc::{Event, Incoming, Outgoing, QoS};
-use std::future::Future;
 use std::str;
 use std::time::Duration;
-use tokio::sync::broadcast;
+
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::error::TryRecvError;
 use tokio::time::{sleep, timeout};
@@ -39,7 +38,7 @@ pub async fn mqtt_poll_loop(
                             error!("mqtt disconnect packet received.");
                             return;
                         }
-                        Incoming::ConnAck(ca) => {
+                        Incoming::ConnAck(_ca) => {
                             info!("MQTT connection established.");
                         }
                         Incoming::PubAck(pa) => {
@@ -99,7 +98,7 @@ pub async fn mqtt_poll_loop(
             Ok(ipcm) => match ipcm {
                 IPCMessage::Shutdown => {
                     info!("MQTT Received shutdown message, exiting thread.");
-                    mqtt.client.disconnect().await;
+                    let _ = mqtt.client.disconnect().await;
                     return Err(GatewayError::ExitingThread);
                 }
                 IPCMessage::Inbound(_) => {}
@@ -132,14 +131,15 @@ pub async fn mqtt_poll_loop(
                                 if let Payload::Config(config) = msg.payload {
                                     let vals =
                                         config.unique_id.splitn(3, ".").collect::<Vec<&str>>();
-                                    &MQTT_CONFIG_PAYLOADS_SENT.with_label_values(&vals).inc();
+                                    let _ =
+                                        &MQTT_CONFIG_PAYLOADS_SENT.with_label_values(&vals).inc();
                                 };
                             }
                             Err(e) => {
                                 error!("Couldn't send message: {e}");
                             }
                         },
-                        Err(e) => {
+                        Err(_e) => {
                             error!("Timeout trying to mqtt publish!")
                         }
                     }
@@ -156,7 +156,7 @@ pub async fn mqtt_poll_loop(
                 }
                 IPCMessage::Shutdown => {
                     info!("MQTT Received shutdown message, exiting thread.");
-                    mqtt.client.disconnect().await;
+                    let _ = mqtt.client.disconnect().await;
                     return Err(GatewayError::ExitingThread);
                 }
             },
@@ -172,5 +172,4 @@ pub async fn mqtt_poll_loop(
         // trace!("mqtt tick");
         let _ = sleep(Duration::from_millis(MQTT_POLL_INTERVAL_MILLIS)).await;
     }
-    Ok(())
 }

@@ -180,7 +180,7 @@ pub async fn generate_payloads(
 
                 // if we are employing a scale factor on an int, it becomes a float
                 if let Some(scale) = monitored_point.scale_factor {
-                    let mut scaled_value: f32 = 0.0;
+                    let scaled_value: f32;
                     if scale >= 0 {
                         scaled_value = (*int as f32 * (f32::pow(10.0, scale.abs() as f32))).into();
                     } else {
@@ -209,7 +209,7 @@ pub async fn generate_payloads(
                             if monitored_point.check_deviations.is_some() {
                                 deviations = monitored_point.check_deviations.unwrap();
                             }
-                            let mut stdev_checked: f32 = 0.0;
+                            let stdev_checked: f32;
                             if ag.stdev.abs() < 1.0 {
                                 stdev_checked = ag.stdev.abs() + 1.0
                             } else {
@@ -248,7 +248,7 @@ pub async fn generate_payloads(
                 } else {
                     config_payload.native_uom = point_data.unwrap().units.clone();
                 }
-                let mut scaled_value: f32 = 0.0;
+                let scaled_value: f32;
                 if let Some(scale) = monitored_point.scale_factor {
                     if scale >= 0 {
                         scaled_value = (float * f32::pow(10.0, scale.abs() as f32)).into();
@@ -276,7 +276,7 @@ pub async fn generate_payloads(
                         if monitored_point.check_deviations.is_some() {
                             deviations = monitored_point.check_deviations.unwrap();
                         }
-                        let mut stdev_checked: f32 = 0.0;
+                        let stdev_checked: f32;
                         if ag.stdev.abs() < 1.0 {
                             stdev_checked = ag.stdev.abs() + 1.0
                         } else {

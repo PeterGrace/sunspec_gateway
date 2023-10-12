@@ -1,7 +1,6 @@
 use crate::config_structs::{InputType, PointConfig};
 use crate::consts::*;
-use chrono::{DateTime, Utc};
-use std::ffi::CString;
+
 use sunspec_rs::sunspec_models::Access;
 
 #[derive(Debug)]
@@ -44,7 +43,7 @@ impl MonitoredPoint {
     pub fn new(model: String, pc: PointConfig) -> anyhow::Result<Self> {
         debug!("Creating a monitoredpoint for {model}/{}", pc.point);
 
-        let mut interval_checked: u64 = 0_u64;
+        let interval_checked: u64;
         if pc.interval < LOWER_LIMIT_INTERVAL {
             interval_checked = LOWER_LIMIT_INTERVAL
         } else {

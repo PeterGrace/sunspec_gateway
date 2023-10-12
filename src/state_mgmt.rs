@@ -2,22 +2,18 @@ use crate::payload::{HAConfigPayload, StatePayload};
 use anyhow::{bail, Result};
 use lazy_static::lazy_static;
 
-use reservoir_sampling::unweighted::l as res_l;
-use sqlx::database::HasArguments;
-use sqlx::encode::IsNull;
 use sqlx::pool::PoolConnection;
 use sqlx::sqlite::SqliteConnectOptions;
-use sqlx::{
-    migrate::MigrateDatabase, ConnectOptions, Database, Encode, Error, Executor, FromRow, Pool,
-    Row, Sqlite, SqlitePool,
-};
+use sqlx::{migrate::MigrateDatabase, ConnectOptions, FromRow, Pool, Row, Sqlite, SqlitePool};
 use std::str::FromStr;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
 use tokio::sync::OnceCell;
-use tracing_log::log::LevelFilter;
+
 use url::Url;
 
 #[derive(Debug, Clone, FromRow)]
+#[allow(non_camel_case_types)]
+#[allow(dead_code)]
 pub struct point_history {
     uniqueid: String,
     value: String,
@@ -118,7 +114,7 @@ pub async fn cull_records_to(uniqueid: String, cull_num: u8) -> anyhow::Result<(
 }
 
 pub async fn check_needs_adjust(uniques_present: Vec<String>) -> anyhow::Result<Vec<String>> {
-    let mut pool = DB_POOL.get().unwrap();
+    let pool = DB_POOL.get().unwrap();
     let split_vec = match uniques_present.get(0).clone() {
         Some(s) => s,
         None => {
@@ -126,7 +122,7 @@ pub async fn check_needs_adjust(uniques_present: Vec<String>) -> anyhow::Result<
         }
     };
     let mut splitval = split_vec.splitn(4, ".");
-    let (sn, mn, pn, st) = (
+    let (sn, mn, pn, _st) = (
         splitval.next().unwrap().to_string(),
         splitval.next().unwrap().to_string(),
         splitval.next().unwrap().to_string(),
@@ -192,7 +188,7 @@ pub async fn check_on(uniqueid: String) -> bool {
             let val = v.get::<String, &str>("value");
             val == r#""on""#
         }
-        Err(e) => false,
+        Err(_e) => false,
     }
 }
 
@@ -208,7 +204,7 @@ pub async fn write_payload_history(
             bail!(e);
         }
     };
-    let mut pool = DB_POOL.get().unwrap();
+    let pool = DB_POOL.get().unwrap();
     match sqlx::query(
         r#"
     INSERT INTO point_history (timestamp, uniqueid, value)

@@ -6,6 +6,8 @@ use std::ops::{Deref, DerefMut};
 use tokio::time::Duration;
 
 #[derive(Debug)]
+// TODO: decide if I'm implementing mqtt reconnect or just panicking
+#[allow(dead_code)]
 pub struct MqttConnection {
     client_name: String,
     server_addr: String,
@@ -50,8 +52,7 @@ impl MqttConnection {
         if username.is_some() && password.is_some() {
             mqttoptions.set_credentials(username.clone().unwrap(), password.clone().unwrap());
         }
-        let (mut mqtt_client, mut eventloop) =
-            AsyncClient::new(mqttoptions, MQTT_THREAD_CHANNEL_CAPACITY);
+        let (mqtt_client, eventloop) = AsyncClient::new(mqttoptions, MQTT_THREAD_CHANNEL_CAPACITY);
 
         match mqtt_client
             .subscribe(MQTT_INBOUND_CONTROL_TOPIC, QoS::AtMostOnce)

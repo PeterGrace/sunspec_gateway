@@ -2,12 +2,11 @@ use crate::consts::*;
 use crate::monitored_point::MonitoredPoint;
 use crate::payload::DeviceInfo;
 use crate::{GatewayError, SHUTDOWN};
-use anyhow::{bail, Error};
-use std::collections::HashMap;
-use std::str::FromStr;
+use anyhow::bail;
+
 use std::time::Duration;
-use sunspec_rs::model_data::ModelData;
-use sunspec_rs::sunspec_connection::{SunSpecConnection, SunSpecPointError};
+
+use sunspec_rs::sunspec_connection::SunSpecConnection;
 use sunspec_rs::sunspec_data::SunSpecData;
 use sunspec_rs::sunspec_models::ValueType;
 use tokio::task;
@@ -74,7 +73,7 @@ impl SunSpecUnit {
                 return Err(GatewayError::Error(format!("{e}")));
             }
         }
-        let mut common = match conn.models.get(&COMMON_MODEL_ID) {
+        let common = match conn.models.get(&COMMON_MODEL_ID) {
             None => {
                 return Err(GatewayError::Error(format!(
                     "Couldn't get model definition for common"

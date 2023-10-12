@@ -18,9 +18,8 @@ mod state_mgmt;
 mod sunspec_poll;
 mod sunspec_unit;
 
-use crate::cli_args::CliArgs;
 use crate::config_structs::GatewayConfig;
-use crate::config_structs::TracingConfig;
+
 use crate::consts::*;
 use crate::ipc::{IPCMessage, InboundMessage, PublishMessage};
 use crate::metrics::{register_metrics, APP_INFO, STATIC_PROM};
@@ -28,11 +27,10 @@ use crate::mqtt_connection::MqttConnection;
 use crate::mqtt_poll::mqtt_poll_loop;
 use crate::state_mgmt::prepare_to_database;
 use crate::sunspec_poll::poll_loop;
-use actix_web::{middleware, web, App, HttpResponse, HttpServer};
-use clap::Parser;
-use config::Config;
+use actix_web::{App, HttpServer};
+
 use console_subscriber;
-use futures::{FutureExt, TryFutureExt};
+use futures::FutureExt;
 use lazy_static::lazy_static;
 use opentelemetry::global;
 use opentelemetry::sdk::propagation::TraceContextPropagator;
@@ -40,20 +38,18 @@ use opentelemetry::sdk::trace::Tracer;
 use opentelemetry::sdk::{trace, Resource};
 use opentelemetry::KeyValue;
 use opentelemetry_otlp::WithExportConfig;
-use serde::Deserialize;
-use sqlx::{Pool, Sqlite};
+
 use std::collections::VecDeque;
 use std::fs;
 use std::process;
-use std::sync::Arc;
+
 use std::time::Duration;
 use sunspec_unit::SunSpecUnit;
-use tokio::sync::{broadcast, mpsc, Mutex, OnceCell, RwLock};
+use tokio::sync::{broadcast, mpsc, OnceCell, RwLock};
 use tokio::task::JoinSet;
 use tokio::time::{sleep, timeout};
-use tracing_log::AsTrace;
-use tracing_opentelemetry::OpenTelemetryLayer;
-use tracing_subscriber::{filter, prelude::*, EnvFilter, Layer, Registry};
+
+use tracing_subscriber::{prelude::*, EnvFilter, Registry};
 
 #[derive(Error, Debug, Default)]
 pub enum GatewayError {
@@ -122,15 +118,15 @@ async fn main() {
     tokio::task::spawn(server);
 
     let (tx, mut rx) = mpsc::channel(MPSC_BUFFER_SIZE);
-    let (mqtt_tx, mut mqtt_rx) = mpsc::channel(MPSC_BUFFER_SIZE);
+    let (mqtt_tx, mqtt_rx) = mpsc::channel(MPSC_BUFFER_SIZE);
     let (from_mqtt_tx, mut from_mqtt_rx) = mpsc::channel(MPSC_BUFFER_SIZE);
-    let (broadcast_tx, mut broadcast_rx) = broadcast::channel::<IPCMessage>(16_usize);
+    let (broadcast_tx, _broadcast_rx) = broadcast::channel::<IPCMessage>(16_usize);
 
     let bcasttx = broadcast_tx.clone();
-    ctrlc::set_handler(move || {
+    let _ = ctrlc::set_handler(move || {
         println!("Received Ctrl-C, communicating to threads to stop");
         let _ = SHUTDOWN.set(true);
-        bcasttx.send(IPCMessage::Shutdown);
+        let _ = bcasttx.send(IPCMessage::Shutdown);
     });
 
     let console_layer = console_subscriber::spawn();
@@ -140,7 +136,7 @@ async fn main() {
             .with_file(true)
             .with_line_number(true),
     );
-    let mut subscriber = Registry::default()
+    let subscriber = Registry::default()
         .with(console_layer)
         .with(env_filter)
         .with(format_layer);
@@ -180,13 +176,13 @@ async fn main() {
     .await
     {
         Ok(m) => m,
-        Err(e) => {
+        Err(_e) => {
             return die("Couldn't create mqtt connection object: {e}");
         }
     };
     let bcasttx = broadcast_tx.clone();
     let mqtt_handler = tokio::task::spawn(async move {
-        mqtt_poll_loop(
+        let _ = mqtt_poll_loop(
             mqtt_conn,
             mqtt_rx,
             bcasttx.clone().subscribe(),
@@ -361,7 +357,7 @@ async fn main() {
     //endregion
 }
 
-pub fn make_tracer(url: String, sample: f32) -> Tracer {
+pub fn make_tracer(url: String, _sample: f32) -> Tracer {
     let exporter = opentelemetry_otlp::new_exporter().http().with_endpoint(url);
     let otlp_tracer = opentelemetry_otlp::new_pipeline()
         .tracing()
