@@ -200,7 +200,7 @@ async fn main() {
             match SunSpecUnit::new(u.addr.clone(), s.to_string()).await {
                 Ok(p) => devices.push(p),
                 Err(e) => {
-                    die(&format!("Unable to create connection to SunSpec Unit: {e}"));
+                    error!("Unable to create connection to SunSpec Unit: {e}");
                 }
             };
         }
