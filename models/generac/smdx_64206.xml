@@ -13,7 +13,7 @@
         <symbol id="RULE_14H_2">2</symbol>
         <symbol id="RULE_21">3</symbol>
         <symbol id="RULE_PREPA">4</symbol>
-        <symbol id="ISONE">5</symbol>
+        <symbol id="RULE_ISONE">5</symbol>
         <symbol id="RULE_LADWP">6</symbol>
         <symbol id="RULE_PECO">7</symbol>
         <symbol id="RULE_MISO">8</symbol>
@@ -28,7 +28,7 @@
         <symbol id="AmerenIL_Std_2018">17</symbol>
         <symbol id="AmerenIL_Rebate_2018">18</symbol>
         <symbol id="BC_HYDRO_2014">19</symbol>
-        <symbol id="ISONE_v2">20</symbol>
+        <symbol id="ISO_NE_V2.0">20</symbol>
         <symbol id="RULE_21_2023">21</symbol>
         <symbol id="National_Grid_NY_2023">22</symbol>
         <symbol id="NYSEG_RGE_2023">23</symbol>
@@ -36,6 +36,12 @@
         <symbol id="ORU_2023">25</symbol>
         <symbol id="CHGE_2023">26</symbol>
         <symbol id="IEEE_1547a_2014">27</symbol>
+        <symbol id="IEEE_1547_2003_ReConnV_7_5">28</symbol>
+        <symbol id="IEEE_1547_2003_ReConnV_10">29</symbol>
+        <symbol id="MWEC_2023">30</symbol>
+        <symbol id="LADWP_2023">31</symbol>
+        <symbol id="BED_2022">32</symbol>
+        <symbol id="PREPA_LUMA_2024">33</symbol>
       </point>
       <point id="Def" offset="6" type="enum16" mandatory="true">
         <symbol id="NOT_DEFAULTED">0</symbol>
@@ -207,7 +213,7 @@
         <description>Configure for Puerto Rico (PREPA) settings.</description>
         <notes></notes>
       </symbol>
-      <symbol id="ISONE">
+      <symbol id="RULE_ISONE">
         <label>ISO-NE (1547a-2014)</label>
         <description>Configure ISO New England settings.</description>
         <notes></notes>
@@ -248,7 +254,7 @@
         <notes></notes>
       </symbol>
       <symbol id="RULE_MISO_1547_2018">
-        <label>MISO 1547-2018 SA</label>
+        <label>MISO 1547-2018</label>
         <description></description>
         <notes></notes>
       </symbol>
@@ -282,7 +288,7 @@
         <description></description>
         <notes></notes>
       </symbol>
-      <symbol id="ISONE_v2">
+      <symbol id="ISO_NE_V2.0">
         <label>ISO-NE 2023</label>
         <description></description>
         <notes></notes>
@@ -319,6 +325,36 @@
       </symbol>
       <symbol id="IEEE_1547a_2014">
         <label>IEEE 1547a-2014</label>
+        <description></description>
+        <notes></notes>
+      </symbol>
+      <symbol id="IEEE_1547_2003_ReConnV_7_5">
+        <label>IEEE 1547-2003 (ReConnV 7.5%)</label>
+        <description></description>
+        <notes></notes>
+      </symbol>
+      <symbol id="IEEE_1547_2003_ReConnV_10">
+        <label>IEEE 1547-2003 (ReConnV 10%)</label>
+        <description></description>
+        <notes></notes>
+      </symbol>
+      <symbol id="MWEC_2023">
+        <label>MWEC 2023</label>
+        <description></description>
+        <notes></notes>
+      </symbol>
+      <symbol id="LADWP_2023">
+        <label>LADWP 2023</label>
+        <description></description>
+        <notes></notes>
+      </symbol>
+      <symbol id="BED_2022">
+        <label>BED 2022</label>
+        <description></description>
+        <notes></notes>
+      </symbol>
+      <symbol id="PREPA_LUMA_2024">
+        <label>PREPA-LUMA 2024</label>
         <description></description>
         <notes></notes>
       </symbol>

@@ -1,6 +1,6 @@
 [package]
 name = "sunspec_gateway"
-version = "0.5.0"
+version = "0.5.1"
 edition = "2021"
 authors = ["Peter Grace"]
 description = "Translate sunspec-compliant equipment metrics into MQTT"
@@ -27,7 +27,8 @@ serde = {version="1.0.185", features=["derive"]}
 serde_json = "1.0.105"
 serde_yaml = "=0.8.26"
 prometheus = {version = "0.13.3", features=["process"]}
-sunspec_rs = "0.6.1"
+sunspec_rs = "0.6.3"
+#sunspec_rs = {path = "/home/pgrace/repos/sunspec_rs"}
 console-subscriber = "0.1.10"
 chrono = "0.4.28"
 rand = "0.8.5"

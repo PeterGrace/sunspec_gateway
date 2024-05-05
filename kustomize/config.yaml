@@ -199,14 +199,14 @@ models:
       device_class: "voltage"
       state_class: "measurement"
       value_min: 0
-      value_max: 300
+      value_max: 350
     - point: "CellVMax"
       interval: 60
       precision: 1
       device_class: "voltage"
       state_class: "measurement"
       value_min: 0
-      value_max: 300
+      value_max: 350
     - point: "W"
       interval: 60
       precision: 1
@@ -260,7 +260,7 @@ models:
       state_class: "measurement"
       precision: 1
       value_min: 0
-      value_max: 300
+      value_max: 350
   "64200":
     - point: "SysMd"
       interval: 60
@@ -436,7 +436,7 @@ models:
       precision: 1
       uom: "V"
       value_min: 0
-      value_max: 300
+      value_max: 350
   "64263":
     - point: "Enable"
       interval: 60
