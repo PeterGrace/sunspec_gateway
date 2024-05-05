@@ -11,7 +11,7 @@ resources:
 images:
 - name: IMAGE:TAG
   newName: docker.io/petergrace/sunspec_gateway
-  newTag: v0.6.0
+  newTag: v0.5.1
 
 secretGenerator:
 - files:
