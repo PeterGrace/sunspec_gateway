@@ -3172,9 +3172,7 @@ dependencies = [
 
 [[package]]
 name = "sunspec_rs"
-version = "0.6.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0976b030742c5e312e180327110512c01f697acc96733cace23584fbb2a7d50a"
+version = "0.6.1"
 dependencies = [
  "anyhow",
  "async-recursion",
