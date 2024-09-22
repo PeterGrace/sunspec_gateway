@@ -212,7 +212,7 @@ models:
       precision: 1
       device_class: "power"
       state_class: "measurement"
-      value_min: 0
+      value_min: -5000
       value_max: 5000
     - point: "SoC"
       device_class: "battery"
@@ -267,7 +267,7 @@ models:
       readwrite: true
       inputs:
         select:
-          - "GRID_TIE"
+          - "GRID_CONNECT"
           - "SELF_SUPPLY"
           - "CLEAN_BACKUP"
           - "PRIORITY_BACKUP"
