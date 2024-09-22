@@ -1,0 +1,6 @@
+services:
+  sunspec_gateway:
+    image: docker.io/petergrace/sunspec_gateway:latest
+    volumes:
+      - "./config.yaml:/opt/sunspec_gateway/config.yaml"
+
