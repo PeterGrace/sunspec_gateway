@@ -34,7 +34,7 @@ use futures::FutureExt;
 use lazy_static::lazy_static;
 use opentelemetry::global;
 use opentelemetry::sdk::propagation::TraceContextPropagator;
-use opentelemetry::sdk::trace::Tracer;
+use opentelemetry::sdk::trace::{BatchConfig, Tracer};
 use opentelemetry::sdk::{trace, Resource};
 use opentelemetry::KeyValue;
 use opentelemetry_otlp::WithExportConfig;
@@ -48,7 +48,8 @@ use sunspec_unit::SunSpecUnit;
 use tokio::sync::{broadcast, mpsc, OnceCell, RwLock};
 use tokio::task::JoinSet;
 use tokio::time::{sleep, timeout};
-
+use tracing::Instrument;
+use tracing_subscriber::fmt::format::FmtSpan;
 use tracing_subscriber::{prelude::*, EnvFilter, Registry};
 
 #[derive(Error, Debug, Default)]
@@ -95,6 +96,7 @@ pub fn die(msg: &str) {
 }
 
 #[tokio::main]
+#[instrument]
 async fn main() {
     //region initialize app and logging
     // disabling clap for the moment while I decide what I want to do with this vs. envvars
@@ -115,7 +117,9 @@ async fn main() {
         .unwrap()
         .run();
 
-    tokio::task::spawn(server);
+    let _http_server_handle = tokio::task::Builder::new()
+        .name("http_metrics_server")
+        .spawn(server);
 
     let (tx, mut rx) = mpsc::channel(MPSC_BUFFER_SIZE);
     let (mqtt_tx, mqtt_rx) = mpsc::channel(MPSC_BUFFER_SIZE);
@@ -125,26 +129,33 @@ async fn main() {
     let bcasttx = broadcast_tx.clone();
     let _ = ctrlc::set_handler(move || {
         println!("Received Ctrl-C, communicating to threads to stop");
+        //opentelemetry::global::shutdown_tracer_provider();
         let _ = SHUTDOWN.set(true);
         let _ = bcasttx.send(IPCMessage::Shutdown);
     });
 
     let console_layer = console_subscriber::spawn();
     let env_filter = EnvFilter::try_from_default_env().unwrap_or(EnvFilter::new("INFO"));
-    let format_layer = tracing_subscriber::fmt::layer().event_format(
-        tracing_subscriber::fmt::format()
-            .with_file(true)
-            .with_line_number(true),
-    );
+    let format_layer = tracing_subscriber::fmt::layer()
+        .event_format(
+            tracing_subscriber::fmt::format()
+                .with_file(true)
+                .with_thread_ids(true)
+                .with_line_number(true),
+        )
+        .with_span_events(FmtSpan::NONE);
+
     let subscriber = Registry::default()
         .with(console_layer)
         .with(env_filter)
         .with(format_layer);
 
+    let mut tracer: Option<Tracer> = None;
     let config = SETTINGS.read().await;
     let tracer_layer = if config.tracing.is_some() {
         let t = config.tracing.clone().unwrap();
-        Some(tracing_opentelemetry::layer().with_tracer(make_tracer(t.url, t.sample_rate)))
+        let tracer = Some(make_tracer(t.url, t.sample_rate));
+        Some(tracing_opentelemetry::layer().with_tracer(tracer.unwrap().clone()))
     } else {
         None
     };
@@ -181,15 +192,18 @@ async fn main() {
         }
     };
     let bcasttx = broadcast_tx.clone();
-    let mqtt_handler = tokio::task::spawn(async move {
-        let _ = mqtt_poll_loop(
-            mqtt_conn,
-            mqtt_rx,
-            bcasttx.clone().subscribe(),
-            from_mqtt_tx,
-        )
-        .await;
-    });
+    let mqtt_handler = tokio::task::Builder::new()
+        .name("mqtt_thread")
+        .spawn(async move {
+            let _ = mqtt_poll_loop(
+                mqtt_conn,
+                mqtt_rx,
+                bcasttx.clone().subscribe(),
+                from_mqtt_tx,
+            )
+            .await;
+        })
+        .unwrap();
     //endregion
 
     //region populate sunspec devices into an array
@@ -212,12 +226,17 @@ async fn main() {
         let mut tasks = TASK_PILE.write().await;
         let tx = tx.clone();
         let bcast_rx = broadcast_tx.clone().subscribe();
-        tasks.spawn(async move {
-            match poll_loop(&d, tx, bcast_rx).await {
-                Ok(_) => Ok(()),
-                Err(e) => Err(e),
+        let task_name = format!("poll_loop_{}", d.serial_number);
+        let span = tracing::info_span!("task", name = task_name.as_str());
+        tasks.spawn(
+            async move {
+                match poll_loop(&d, tx, bcast_rx).await {
+                    Ok(_) => Ok(()),
+                    Err(e) => Err(e),
+                }
             }
-        });
+            .instrument(span),
+        );
     }
 
     //endregion
@@ -229,69 +248,73 @@ async fn main() {
         let _ = STATIC_PROM.registry.gather();
         //endregion
         //region sunspec device channel loop handling
-        match rx.try_recv() {
-            Ok(ipcm) => match ipcm {
-                IPCMessage::Shutdown => {
-                    unreachable!();
-                }
-                IPCMessage::Outbound(o) => {
-                    msg_queue.push_front(o);
-                }
-                IPCMessage::Error(e) => {
-                    die(&format!("serial_number={}: {}", e.serial_number, e.msg));
-                }
-                IPCMessage::PleaseReconnect(addr, slave) => {
-                    let tx = tx.clone();
-                    let bcast_rx = broadcast_tx.subscribe();
-                    let ssu = match SunSpecUnit::new(addr.clone(), slave.to_string()).await {
-                        Ok(s) => s,
-                        Err(e) => {
-                            return die(&format!(
-                                "Couldn't create new sunspecunit to replace dead conn: {e}"
-                            ));
-                        }
-                    };
-                    debug!("We received a PleaseReconnect message for {addr}/{slave}");
-                    let mut tasks = TASK_PILE.write().await;
-                    tasks.spawn(async move {
-                        match poll_loop(&ssu, tx, bcast_rx).await {
-                            Ok(_) => Ok(()),
-                            Err(e) => return Err(e),
-                        }
-                    });
-                }
-                IPCMessage::Inbound(_) => {
-                    // we don't send inbounds to mqtt
-                    unreachable!();
-                }
-            },
-            Err(_) => {}
-        };
+        while rx.len() > 0 {
+            match rx.try_recv() {
+                Ok(ipcm) => match ipcm {
+                    IPCMessage::Shutdown => {
+                        unreachable!();
+                    }
+                    IPCMessage::Outbound(o) => {
+                        msg_queue.push_front(o);
+                    }
+                    IPCMessage::Error(e) => {
+                        die(&format!("serial_number={}: {}", e.serial_number, e.msg));
+                    }
+                    IPCMessage::PleaseReconnect(addr, slave) => {
+                        let tx = tx.clone();
+                        let bcast_rx = broadcast_tx.subscribe();
+                        let ssu = match SunSpecUnit::new(addr.clone(), slave.to_string()).await {
+                            Ok(s) => s,
+                            Err(e) => {
+                                return die(&format!(
+                                    "Couldn't create new sunspecunit to replace dead conn: {e}"
+                                ));
+                            }
+                        };
+                        debug!("We received a PleaseReconnect message for {addr}/{slave}");
+                        let mut tasks = TASK_PILE.write().await;
+                        tasks.spawn(async move {
+                            match poll_loop(&ssu, tx, bcast_rx).await {
+                                Ok(_) => Ok(()),
+                                Err(e) => return Err(e),
+                            }
+                        });
+                    }
+                    IPCMessage::Inbound(_) => {
+                        // we don't send inbounds to mqtt
+                        unreachable!();
+                    }
+                },
+                Err(_) => {}
+            }
+        }
 
-        match from_mqtt_rx.try_recv() {
-            Ok(recvd) => match recvd {
-                IPCMessage::Inbound(inmsg) => {
-                    info!(
-                        "Received payload for {},{},{}:{}",
-                        inmsg.serial_number, inmsg.model, inmsg.point_name, inmsg.payload
-                    );
-                    incoming_control_queue.push_front(inmsg.clone());
-                }
-                IPCMessage::Shutdown => {
-                    unreachable!();
-                }
-                IPCMessage::Outbound(_) => {
-                    unreachable!();
-                }
-                IPCMessage::PleaseReconnect(_, _) => {
-                    unreachable!();
-                }
-                IPCMessage::Error(_) => {
-                    unreachable!();
-                }
-            },
-            Err(_) => {}
-        };
+        while from_mqtt_rx.len() > 0 {
+            match from_mqtt_rx.try_recv() {
+                Ok(recvd) => match recvd {
+                    IPCMessage::Inbound(inmsg) => {
+                        info!(
+                            "Received payload for {},{},{}:{}",
+                            inmsg.serial_number, inmsg.model, inmsg.point_name, inmsg.payload
+                        );
+                        incoming_control_queue.push_front(inmsg.clone());
+                    }
+                    IPCMessage::Shutdown => {
+                        unreachable!();
+                    }
+                    IPCMessage::Outbound(_) => {
+                        unreachable!();
+                    }
+                    IPCMessage::PleaseReconnect(_, _) => {
+                        unreachable!();
+                    }
+                    IPCMessage::Error(_) => {
+                        unreachable!();
+                    }
+                },
+                Err(_) => {}
+            }
+        }
 
         //endregion
         while let Some(msg) = incoming_control_queue.pop_front() {
@@ -319,7 +342,6 @@ async fn main() {
         }
 
         // check cleanups
-
         let mut tasks = TASK_PILE.write().await;
         match tasks.join_next().now_or_never() {
             Some(task) => {
@@ -352,24 +374,47 @@ async fn main() {
             die("MQTT thread exited.");
         }
 
+        if tracer.is_some() {
+            let t = tracer.clone().unwrap();
+            let tp = t.provider().unwrap();
+            let _rs = tp.force_flush();
+        }
         let _ = sleep(Duration::from_millis(GENERIC_WAIT_MILLIS)).await;
     }
     //endregion
 }
 
-pub fn make_tracer(url: String, _sample: f32) -> Tracer {
+pub fn make_tracer(url: String, sample: f32) -> Tracer {
     let exporter = opentelemetry_otlp::new_exporter().http().with_endpoint(url);
+    let batch_config = BatchConfig::default()
+        .with_max_export_batch_size(1024)
+        //.with_scheduled_delay(Duration::from_millis(5000))
+        .with_max_export_timeout(Duration::from_secs(10))
+        .with_max_queue_size(16384);
     let otlp_tracer = opentelemetry_otlp::new_pipeline()
         .tracing()
         .with_exporter(exporter)
         .with_trace_config(
             trace::config()
-                .with_resource(Resource::new(vec![KeyValue::new(
-                    opentelemetry_semantic_conventions::resource::SERVICE_NAME,
-                    "sunspec_gateway",
-                )]))
-                .with_sampler(opentelemetry::sdk::trace::Sampler::TraceIdRatioBased(1.0)),
+                .with_resource(Resource::new(vec![
+                    KeyValue::new(
+                        opentelemetry_semantic_conventions::resource::SERVICE_NAME,
+                        "sunspec_gateway",
+                    ),
+                    KeyValue::new(
+                        opentelemetry_semantic_conventions::resource::SERVICE_VERSION,
+                        env!("CARGO_PKG_VERSION"),
+                    ),
+                    KeyValue::new(
+                        opentelemetry_semantic_conventions::resource::SERVICE_INSTANCE_ID,
+                        uuid::Uuid::new_v4().to_string(),
+                    ),
+                ]))
+                .with_sampler(opentelemetry::sdk::trace::Sampler::TraceIdRatioBased(
+                    sample as f64,
+                )),
         )
+        .with_batch_config(batch_config)
         .install_batch(opentelemetry::runtime::Tokio)
         .expect("Can't create tracer");
     otlp_tracer

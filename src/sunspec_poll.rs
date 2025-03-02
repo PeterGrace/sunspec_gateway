@@ -17,7 +17,10 @@ use tokio::sync::broadcast::error::TryRecvError;
 use tokio::sync::broadcast::Receiver;
 use tokio::sync::mpsc::Sender;
 use tokio::time::{sleep, Duration};
+use tracing::Instrument;
+use tracing::Level;
 
+#[instrument(skip_all)]
 pub async fn poll_loop(
     unit: &SunSpecUnit,
     tx: Sender<IPCMessage>,
@@ -25,6 +28,7 @@ pub async fn poll_loop(
 ) -> Result<(), GatewayError> {
     let genesis_moment = Utc::now();
     let sn = &unit.serial_number;
+    let addr = &unit.addr;
     let config = SETTINGS.read().await;
     let mut points: Vec<MonitoredPoint> = vec![];
     let mut last_report: HashMap<String, DateTime<Utc>> = HashMap::new();
@@ -47,15 +51,25 @@ pub async fn poll_loop(
     drop(config);
 
     loop {
-        for requested_point_to_check in points.iter_mut() {
+        let timestamp = Utc::now().timestamp();
+        let single_point_span = span!(
+            Level::INFO,
+            "single_point_span",
+            sn = %sn,
+            timestamp = %timestamp,
+        );
+        let _enter_single = single_point_span.enter();
+
+        let point_count = points.len();
+        for (idx, requested_point_to_check) in points.iter_mut().enumerate() {
             //region assign variables
             let interval = requested_point_to_check.interval as i64;
-            let time_pad = thread_rng().gen_range(0..interval) as i64;
+            let time_pad = thread_rng().gen_range(0..(interval / 3)) as i64;
             let model = requested_point_to_check.model.clone();
             let point_name = requested_point_to_check.name.clone();
             let uniqueid = format!("{sn}.{model}.{point_name}");
             let log_prefix = format!(
-                "[{}:{} {sn} {model}/{point_name}]",
+                "[{}:{} {sn} {model}/{point_name} {idx}/{point_count}]",
                 unit.addr, unit.slave_id
             );
             //endregion
@@ -95,6 +109,7 @@ pub async fn poll_loop(
                                                         symbol.symbol.parse::<i32>().unwrap(),
                                                     ),
                                                 )
+                                                .instrument(span!(Level::INFO, "modbus_write"))
                                                 .await
                                             {
                                                 Ok(_) => {
@@ -152,6 +167,10 @@ pub async fn poll_loop(
                                                                                         .unwrap(),
                                                                                 ),
                                                                             )
+                                                                            .instrument(span!(
+                                                                                Level::INFO,
+                                                                                "modbus_write"
+                                                                            ))
                                                                             .await
                                                                         {
                                                                             Ok(_) => {
@@ -195,6 +214,10 @@ pub async fn poll_loop(
                                                                                     .unwrap(),
                                                                             ),
                                                                         )
+                                                                        .instrument(span!(
+                                                                            Level::INFO,
+                                                                            "modbus_write"
+                                                                        ))
                                                                         .await
                                                                     {
                                                                         Ok(_) => {
@@ -235,6 +258,10 @@ pub async fn poll_loop(
                                                                                 parsed,
                                                                             ),
                                                                         )
+                                                                        .instrument(span!(
+                                                                            Level::INFO,
+                                                                            "modbus_write"
+                                                                        ))
                                                                         .await
                                                                     {
                                                                         Ok(_) => {
@@ -307,6 +334,7 @@ pub async fn poll_loop(
                 .timestamp();
             //region check if it is time to send a datapoint / report on point being stale
             if (now_stamp - last_stamp) < (interval + time_pad) {
+                //debug!("{log_prefix}: Not ready to send point yet: now {now_stamp}, last: {last_stamp}, interval: {interval}, time_pad: {time_pad}, now-last: {}, interval+pad: {}", now_stamp - last_stamp, interval + time_pad);
                 continue;
             } else {
                 if (now_stamp - last_stamp) > 1800 {
@@ -318,12 +346,18 @@ pub async fn poll_loop(
             }
             //endregion
 
-            debug!("{log_prefix}: Checking point {model}/{point_name}");
+            event!(
+                Level::INFO,
+                "{log_prefix}: Checking point {model}/{point_name}"
+            );
             let input_only = requested_point_to_check.input_only.unwrap_or(false);
+
             //region actually get the point and generate payload
             if input_only {
                 debug!("{log_prefix}: this point is input-only; skipping point get and just sending config payload.");
-                let payloads = generate_payloads(unit, None, &requested_point_to_check, None).await;
+                let payloads = generate_payloads(unit, None, &requested_point_to_check, None)
+                    .instrument(span!(Level::INFO, "generate_payloads"))
+                    .await;
 
                 last_report.insert(uniqueid, Utc::now());
                 if requested_point_to_check.homeassistant_discovery {
@@ -332,6 +366,7 @@ pub async fn poll_loop(
                             topic: payloads[0].config_topic.clone(),
                             payload: Payload::Config(payloads[0].config.clone()),
                         }))
+                        .instrument(span!(Level::INFO, "outbound_config_send"))
                         .await;
                 }
             } else {
@@ -339,6 +374,7 @@ pub async fn poll_loop(
                     .conn
                     .clone()
                     .get_point(md.unwrap().clone(), &requested_point_to_check.name, None)
+                    .instrument(span!(Level::INFO, "modbus_read"))
                     .await
                 {
                     Err(e) => {
@@ -361,69 +397,78 @@ pub async fn poll_loop(
                                         unit.addr.clone(),
                                         unit.slave_id,
                                     ))
+                                    .instrument(span!(Level::INFO, "please_reconnect"))
                                     .await;
                                 // lets wait two seconds for the ipc to process.
-                                let _ =
-                                    sleep(Duration::from_millis(MQTT_PROCESSING_PAD_MILLIS)).await;
+                                let _ = sleep(Duration::from_millis(MQTT_PROCESSING_PAD_MILLIS))
+                                    .instrument(span!(Level::INFO, "sleep"))
+                                    .await;
                                 return Err(GatewayError::CommunicationError(e.to_string()));
                             }
                         }
                     }
-                    Ok(recvd_point) => {
-                        match recvd_point.clone().value {
-                            None => {
-                                info!("{log_prefix}: Received none on match recvd_point.clone().value -- is this ok?")
-                            }
-                            Some(val) => {
-                                let _v = recvd_point.clone();
-                                let payloads = generate_payloads(
-                                    unit,
-                                    Some(&recvd_point),
-                                    &requested_point_to_check,
-                                    Some(&val),
-                                )
-                                .await;
+                    Ok(recvd_point) => match recvd_point.clone().value {
+                        None => {
+                            info!("{log_prefix}: Received none on match recvd_point.clone().value -- is this ok?")
+                        }
+                        Some(val) => {
+                            let _v = recvd_point.clone();
+                            let payloads = generate_payloads(
+                                unit,
+                                Some(&recvd_point),
+                                &requested_point_to_check,
+                                Some(&val),
+                            )
+                            .instrument(span!(Level::INFO, "generate_payloads"))
+                            .await;
 
-                                last_report.insert(uniqueid, Utc::now());
-                                for payload in payloads {
-                                    if requested_point_to_check.homeassistant_discovery {
-                                        let _ = tx
-                                            .send(IPCMessage::Outbound(PublishMessage {
-                                                topic: payload.config_topic,
-                                                payload: Payload::Config(payload.config.clone()),
-                                            }))
-                                            .await;
-                                    }
-
+                            last_report.insert(uniqueid, Utc::now());
+                            for payload in payloads {
+                                if requested_point_to_check.homeassistant_discovery {
                                     let _ = tx
                                         .send(IPCMessage::Outbound(PublishMessage {
-                                            topic: payload.state_topic,
-                                            payload: Payload::CurrentState(payload.state.clone()),
+                                            topic: payload.config_topic,
+                                            payload: Payload::Config(payload.config.clone()),
                                         }))
+                                        .instrument(span!(Level::INFO, "outbound_config_send"))
                                         .await;
-                                    if let Err(e) = cull_records_to(
-                                        payload.config.clone().unique_id,
-                                        CULL_HISTORY_ROWS,
-                                    )
+                                }
+
+                                let _ = tx
+                                    .send(IPCMessage::Outbound(PublishMessage {
+                                        topic: payload.state_topic,
+                                        payload: Payload::CurrentState(payload.state.clone()),
+                                    }))
+                                    .instrument(span!(Level::INFO, "outbound_state_send"))
+                                    .await;
+                                if let Err(e) = cull_records_to(
+                                    payload.config.clone().unique_id,
+                                    CULL_HISTORY_ROWS,
+                                )
+                                .instrument(span!(Level::INFO, "cull_records_in_sql"))
+                                .await
+                                {
+                                    warn!(
+                                        "{log_prefix}: Couldn't cull history for this point: {e}"
+                                    );
+                                };
+                                if let Err(e) = write_payload_history(payload.config, payload.state)
+                                    .instrument(span!(Level::INFO, "write_payload_history"))
                                     .await
-                                    {
-                                        warn!("{log_prefix}: Couldn't cull history for this point: {e}");
-                                    };
-                                    if let Err(e) =
-                                        write_payload_history(payload.config, payload.state).await
-                                    {
-                                        warn!("{log_prefix}: Unable to store value in db: {e}");
-                                    }
+                                {
+                                    warn!("{log_prefix}: Unable to store value in db: {e}");
                                 }
                             }
                         }
-                    }
+                    },
                 }
             }
             //endregion
         }
 
-        debug!(%sn, "Device tick");
-        let _ = sleep(Duration::from_secs(MINIMUM_QUERY_INTERVAL_SECS.into())).await;
+        //debug!(%addr, %sn, "Device tick");
+        let _ = sleep(Duration::from_secs(MINIMUM_QUERY_INTERVAL_SECS.into()))
+            .instrument(span!(Level::INFO, "main-loop-sleep"))
+            .await;
     }
 }

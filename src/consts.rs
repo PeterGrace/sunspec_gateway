@@ -1,5 +1,5 @@
 pub const APP_NAME: &str = "sunspec_gateway";
-pub const MPSC_BUFFER_SIZE: usize = 100_usize;
+pub const MPSC_BUFFER_SIZE: usize = 1024_usize;
 pub const MINIMUM_QUERY_INTERVAL_SECS: u16 = 5_u16;
 pub const CULL_HISTORY_ROWS: u8 = 200_u8;
 

@@ -1,13 +1,14 @@
 use crate::consts::MQTT_POLL_INTERVAL_MILLIS;
-use crate::ipc::{IPCMessage, InboundMessage};
+use crate::ipc::{IPCMessage, InboundMessage, PublishMessage};
 use crate::metrics::MQTT_CONFIG_PAYLOADS_SENT;
 use crate::mqtt_connection::MqttConnection;
 use crate::payload::Payload;
 use crate::GatewayError;
+use chrono::Utc;
 use rumqttc::{Event, Incoming, Outgoing, QoS};
+use std::collections::VecDeque;
 use std::str;
 use std::time::Duration;
-
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::error::TryRecvError;
 use tokio::time::{sleep, timeout};
@@ -90,6 +91,7 @@ pub async fn mqtt_poll_loop(
         }
     });
 
+    let mut outbound: VecDeque<PublishMessage> = VecDeque::new();
     loop {
         if task.is_finished() {
             panic!("mqtt eventloop finished, this only happens in a connection error");
@@ -109,9 +111,40 @@ pub async fn mqtt_poll_loop(
             Err(_) => {}
         }
         //region MQTT loop channel handling
-        match incoming_rx.try_recv() {
-            Ok(ipcm) => match ipcm {
+        while let Ok(ipcm) = incoming_rx.try_recv() {
+            match ipcm {
                 IPCMessage::Outbound(msg) => {
+                    outbound.push_back(msg);
+                }
+                IPCMessage::Error(e) => {
+                    error!("serial={}: {}", e.serial_number, e.msg);
+                    return Err(GatewayError::Unspecified);
+                }
+                IPCMessage::PleaseReconnect(_, _) => {
+                    unreachable!();
+                }
+                IPCMessage::Inbound(_) => {
+                    unreachable!();
+                }
+                IPCMessage::Shutdown => {
+                    info!("MQTT Received shutdown message, exiting thread.");
+                    let _ = mqtt.client.disconnect().await;
+                    return Err(GatewayError::ExitingThread);
+                }
+            };
+        }
+        //endregion
+        {
+            if outbound.len() > 0 {
+                debug!(
+                    "Draining outbound queue: {} items to process",
+                    outbound.len()
+                );
+                let timestamp = Utc::now().timestamp();
+                let span = span!(tracing::Level::INFO,"draining-mqtt", timestamp = %timestamp);
+                let _enter = span.enter();
+
+                while let Some(msg) = outbound.pop_front() {
                     let payload = match serde_json::to_vec(&msg.payload) {
                         Ok(p) => p,
                         Err(e) => {
@@ -119,6 +152,7 @@ pub async fn mqtt_poll_loop(
                             continue;
                         }
                     };
+
                     match timeout(
                         Duration::from_secs(3),
                         mqtt.client
@@ -144,31 +178,8 @@ pub async fn mqtt_poll_loop(
                         }
                     }
                 }
-                IPCMessage::Error(e) => {
-                    error!("serial={}: {}", e.serial_number, e.msg);
-                    return Err(GatewayError::Unspecified);
-                }
-                IPCMessage::PleaseReconnect(_, _) => {
-                    unreachable!();
-                }
-                IPCMessage::Inbound(_) => {
-                    unreachable!();
-                }
-                IPCMessage::Shutdown => {
-                    info!("MQTT Received shutdown message, exiting thread.");
-                    let _ = mqtt.client.disconnect().await;
-                    return Err(GatewayError::ExitingThread);
-                }
-            },
-            Err(e) => match e {
-                TryRecvError::Empty => {}
-                TryRecvError::Disconnected => {
-                    error!("We are disconnected!");
-                }
-            },
+            }
         }
-
-        //endregion
         // trace!("mqtt tick");
         let _ = sleep(Duration::from_millis(MQTT_POLL_INTERVAL_MILLIS)).await;
     }

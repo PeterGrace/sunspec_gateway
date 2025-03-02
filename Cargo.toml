@@ -36,6 +36,8 @@ thiserror = "1.0.48"
 sqlx = {version = "0.7.1", features = ["sqlite", "runtime-tokio-rustls"]}
 opentelemetry = {version="0.20.0",features = ["trace", "rt-tokio", "metrics", "logs_level_enabled"]}
 tracing-opentelemetry = "0.21.0"
+opentelemetry-jaeger = "0.22.0"
+opentelemetry-jaeger-propagator = "0.28.0"
 opentelemetry-otlp = {version="0.13.0", features=["http-proto","reqwest-rustls","reqwest-client"]}
 opentelemetry-semantic-conventions = "0.12.0"
 url = "2.4.1"
@@ -45,3 +47,4 @@ actix-web-prom = "0.6.0"
 metrics-process = "1.0.12"
 ctrlc = "3.4.1"
 reservoir-sampling = "0.5.1"
+uuid = { version = "1.15.1", features = ["v4"] }
