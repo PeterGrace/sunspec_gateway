@@ -3223,7 +3223,7 @@ checksum = "81cdd64d312baedb58e21336b31bc043b77e01cc99033ce76ef539f78e965ebc"
 
 [[package]]
 name = "sunspec_gateway"
-version = "0.5.3"
+version = "0.6.0"
 dependencies = [
  "actix-web",
  "actix-web-prom",
