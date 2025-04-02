@@ -19,77 +19,80 @@ pub async fn mqtt_poll_loop(
     mut bcast_rx: tokio::sync::broadcast::Receiver<IPCMessage>,
     outgoing_tx: mpsc::Sender<IPCMessage>,
 ) -> Result<(), GatewayError> {
-    let task = tokio::spawn(async move {
-        let mut conn = mqtt.event_loop;
-        let mut dlq: Vec<u16> = vec![];
-        loop {
-            let notification = match conn.poll().await {
-                Ok(event) => event,
-                Err(e) => {
-                    let msg = format!("Unable to poll mqtt: {e}");
-                    panic!("{}", msg);
-                }
-            };
+    let task = tokio::task::Builder::new()
+        .name("mqtt_poll_loop")
+        .spawn(async move {
+            let mut conn = mqtt.event_loop;
+            let mut dlq: Vec<u16> = vec![];
+            loop {
+                let notification = match conn.poll().await {
+                    Ok(event) => event,
+                    Err(e) => {
+                        let msg = format!("Unable to poll mqtt: {e}");
+                        panic!("{}", msg);
+                    }
+                };
 
-            match notification {
-                Event::Incoming(i) => {
-                    match i {
-                        Incoming::Disconnect => {
-                            // we should do something here.
-                            error!("mqtt disconnect packet received.");
-                            return;
+                match notification {
+                    Event::Incoming(i) => {
+                        match i {
+                            Incoming::Disconnect => {
+                                // we should do something here.
+                                error!("mqtt disconnect packet received.");
+                                return;
+                            }
+                            Incoming::ConnAck(_ca) => {
+                                info!("MQTT connection established.");
+                            }
+                            Incoming::PubAck(pa) => {
+                                dlq.retain(|x| *x != pa.pkid);
+                            }
+                            Incoming::PingResp => {
+                                trace!("Recv MQTT PONG");
+                            }
+                            Incoming::SubAck(_) => {}
+                            Incoming::Publish(pr) => {
+                                info!("Received publish: {:#?} with payload {:#?}", pr, pr.payload);
+                                let mut splitval = pr.topic.splitn(5, "/");
+                                let (_, _, serial_number, model, point_name) = (
+                                    splitval.next().unwrap().to_string(),
+                                    splitval.next().unwrap().to_string(),
+                                    splitval.next().unwrap().to_string(),
+                                    splitval.next().unwrap().to_string(),
+                                    splitval.next().unwrap().to_string(),
+                                );
+                                let ipc = IPCMessage::Inbound(InboundMessage {
+                                    serial_number,
+                                    model,
+                                    point_name,
+                                    payload: str::from_utf8(&pr.payload).unwrap().to_string(),
+                                });
+                                let _ = outgoing_tx.send(ipc).await;
+                            }
+                            _ => {
+                                info!("mqtt incoming packet: {:#?}", i);
+                            }
                         }
-                        Incoming::ConnAck(_ca) => {
-                            info!("MQTT connection established.");
+                    }
+                    Event::Outgoing(o) => match o {
+                        Outgoing::PingReq => {
+                            trace!("Sent MQTT PING");
                         }
-                        Incoming::PubAck(pa) => {
-                            dlq.retain(|x| *x != pa.pkid);
+                        Outgoing::Publish(pb) => {
+                            dlq.push(pb);
                         }
-                        Incoming::PingResp => {
-                            trace!("Recv MQTT PONG");
-                        }
-                        Incoming::SubAck(_) => {}
-                        Incoming::Publish(pr) => {
-                            info!("Received publish: {:#?} with payload {:#?}", pr, pr.payload);
-                            let mut splitval = pr.topic.splitn(5, "/");
-                            let (_, _, serial_number, model, point_name) = (
-                                splitval.next().unwrap().to_string(),
-                                splitval.next().unwrap().to_string(),
-                                splitval.next().unwrap().to_string(),
-                                splitval.next().unwrap().to_string(),
-                                splitval.next().unwrap().to_string(),
-                            );
-                            let ipc = IPCMessage::Inbound(InboundMessage {
-                                serial_number,
-                                model,
-                                point_name,
-                                payload: str::from_utf8(&pr.payload).unwrap().to_string(),
-                            });
-                            let _ = outgoing_tx.send(ipc).await;
-                        }
+                        Outgoing::Subscribe(_) => {}
                         _ => {
-                            info!("mqtt incoming packet: {:#?}", i);
+                            info!("outgoing mqtt packet: {:#?}", o);
                         }
-                    }
+                    },
                 }
-                Event::Outgoing(o) => match o {
-                    Outgoing::PingReq => {
-                        trace!("Sent MQTT PING");
-                    }
-                    Outgoing::Publish(pb) => {
-                        dlq.push(pb);
-                    }
-                    Outgoing::Subscribe(_) => {}
-                    _ => {
-                        info!("outgoing mqtt packet: {:#?}", o);
-                    }
-                },
+                if dlq.len() > 0 {
+                    trace!("DLQ is {}", dlq.len());
+                }
             }
-            if dlq.len() > 0 {
-                trace!("DLQ is {}", dlq.len());
-            }
-        }
-    });
+        })
+        .unwrap();
 
     let mut outbound: VecDeque<PublishMessage> = VecDeque::new();
     loop {

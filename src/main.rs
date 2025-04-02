@@ -29,7 +29,7 @@ use crate::state_mgmt::prepare_to_database;
 use crate::sunspec_poll::poll_loop;
 use actix_web::{App, HttpServer};
 
-use console_subscriber;
+use console_subscriber as tokio_console_subscriber;
 use futures::FutureExt;
 use lazy_static::lazy_static;
 use opentelemetry::global;
@@ -43,11 +43,12 @@ use std::collections::VecDeque;
 use std::fs;
 use std::process;
 
+use chrono::{DateTime, NaiveDateTime, TimeDelta, Utc};
 use std::time::Duration;
 use sunspec_unit::SunSpecUnit;
 use tokio::sync::{broadcast, mpsc, OnceCell, RwLock};
 use tokio::task::JoinSet;
-use tokio::time::{sleep, timeout};
+use tokio::time::{sleep, timeout, Instant};
 use tracing::Instrument;
 use tracing_subscriber::fmt::format::FmtSpan;
 use tracing_subscriber::{prelude::*, EnvFilter, Registry};
@@ -101,6 +102,7 @@ async fn main() {
     //region initialize app and logging
     // disabling clap for the moment while I decide what I want to do with this vs. envvars
     //let cli = CliArgs::parse();
+    tokio_console_subscriber::init();
 
     register_metrics();
     APP_INFO
@@ -152,18 +154,17 @@ async fn main() {
 
     let mut tracer: Option<Tracer> = None;
     let config = SETTINGS.read().await;
-    let tracer_layer = if config.tracing.is_some() {
-        let t = config.tracing.clone().unwrap();
-        let tracer = Some(make_tracer(t.url, t.sample_rate));
-        Some(tracing_opentelemetry::layer().with_tracer(tracer.unwrap().clone()))
-    } else {
-        None
-    };
-
-    let subscriber = subscriber.with(tracer_layer);
-    tracing::subscriber::set_global_default(subscriber)
-        .expect("Can't set global subscriber for logging.");
-    global::set_text_map_propagator(TraceContextPropagator::new());
+    // let tracer_layer = if config.tracing.is_some() {
+    //     let t = config.tracing.clone().unwrap();
+    //     let tracer = Some(make_tracer(t.url, t.sample_rate));
+    //     Some(tracing_opentelemetry::layer().with_tracer(tracer.unwrap().clone()))
+    // } else {
+    //     None
+    // };
+    // let subscriber = subscriber.with(tracer_layer);
+    // tracing::subscriber::set_global_default(subscriber)
+    //     .expect("Can't set global subscriber for logging.");
+    // global::set_text_map_propagator(TraceContextPropagator::new());
 
     //endregion
 
@@ -205,16 +206,30 @@ async fn main() {
         })
         .unwrap();
     //endregion
-
+    let mut retry_queue: VecDeque<(String, u8, DateTime<Utc>)> = VecDeque::new();
     //region populate sunspec devices into an array
     let units = config.units.clone();
     let mut devices: Vec<SunSpecUnit> = vec![];
     for u in units {
         for s in u.slaves.iter() {
-            match SunSpecUnit::new(u.addr.clone(), s.to_string()).await {
-                Ok(p) => devices.push(p),
+            let addr = u.addr.clone();
+            let slave = s.clone().to_string();
+            match tokio::time::timeout(
+                Duration::from_secs(5),
+                SunSpecUnit::new(addr.clone(), slave),
+            )
+            .await
+            {
+                Ok(good) => match good {
+                    Ok(p) => devices.push(p),
+                    Err(e) => {
+                        warn!("Unable to create connection to SunSpec Unit: {e}");
+                        retry_queue.push_back((addr, *s, Utc::now()));
+                    }
+                },
                 Err(e) => {
-                    die(&format!("Unable to create connection to SunSpec Unit: {e}"));
+                    warn!("Timeout connecting to sunspec unit: {e}");
+                    retry_queue.push_back((addr, *s, Utc::now()));
                 }
             };
         }
@@ -228,20 +243,23 @@ async fn main() {
         let bcast_rx = broadcast_tx.clone().subscribe();
         let task_name = format!("poll_loop_{}", d.serial_number);
         let span = tracing::info_span!("task", name = task_name.as_str());
-        tasks.spawn(
-            async move {
-                match poll_loop(&d, tx, bcast_rx).await {
-                    Ok(_) => Ok(()),
-                    Err(e) => Err(e),
+        let _ = tokio::task::Builder::new()
+            .name(&format!("worker-{}", d.clone().serial_number))
+            .spawn(
+                async move {
+                    match poll_loop(&d, tx, bcast_rx).await {
+                        Ok(_) => Ok(()),
+                        Err(e) => Err(e),
+                    }
                 }
-            }
-            .instrument(span),
-        );
+                .instrument(span),
+            );
     }
 
     //endregion
 
     //region watch the mpsc tasks receive loop
+
     let mut msg_queue: VecDeque<PublishMessage> = VecDeque::new();
     let mut incoming_control_queue: VecDeque<InboundMessage> = VecDeque::new();
     loop {
@@ -263,22 +281,42 @@ async fn main() {
                     IPCMessage::PleaseReconnect(addr, slave) => {
                         let tx = tx.clone();
                         let bcast_rx = broadcast_tx.subscribe();
-                        let ssu = match SunSpecUnit::new(addr.clone(), slave.to_string()).await {
-                            Ok(s) => s,
+                        info!("Reconnect requested for {addr}/{slave}");
+                        let ssu: Option<SunSpecUnit> = match tokio::time::timeout(
+                            Duration::from_secs(5),
+                            SunSpecUnit::new(addr.clone(), slave.to_string()),
+                        )
+                        .await
+                        {
+                            Ok(good) => match good {
+                                Ok(unit) => Some(unit),
+                                Err(e) => {
+                                    warn!("Couldn't reconnect to sunspec unit: {e}");
+                                    retry_queue.push_back((addr, slave, Utc::now()));
+                                    None
+                                }
+                            },
                             Err(e) => {
-                                return die(&format!(
-                                    "Couldn't create new sunspecunit to replace dead conn: {e}"
-                                ));
+                                warn!("Couldn't create new sunspecunit to replace dead conn: {e}");
+                                retry_queue.push_back((addr, slave, Utc::now()));
+                                None
                             }
                         };
-                        debug!("We received a PleaseReconnect message for {addr}/{slave}");
-                        let mut tasks = TASK_PILE.write().await;
-                        tasks.spawn(async move {
-                            match poll_loop(&ssu, tx, bcast_rx).await {
-                                Ok(_) => Ok(()),
-                                Err(e) => return Err(e),
-                            }
-                        });
+                        if ssu.is_some() {
+                            let unit = ssu.unwrap();
+                            let mut tasks = TASK_PILE.write().await;
+                            let build = tokio::task::Builder::new();
+                            tasks
+                                .build_task()
+                                .name(&format!("worker-{}", unit.serial_number))
+                                .spawn(async move {
+                                    match poll_loop(&unit, tx, bcast_rx).await {
+                                        Ok(_) => Ok(()),
+                                        Err(e) => return Err(e),
+                                    }
+                                })
+                                .unwrap();
+                        }
                     }
                     IPCMessage::Inbound(_) => {
                         // we don't send inbounds to mqtt
@@ -379,6 +417,22 @@ async fn main() {
             let tp = t.provider().unwrap();
             let _rs = tp.force_flush();
         }
+
+        //region retry connections
+        // if there are pending reconnects, lets intentionally try just one of them per loop
+        if let Some(conn) = retry_queue.pop_front() {
+            let now = Utc::now();
+            let then = conn.2;
+            if now.signed_duration_since(then) > TimeDelta::seconds(30) {
+                // we waited 30 seconds, lets try again
+                if let Err(e) = tx.send(IPCMessage::PleaseReconnect(conn.0, conn.1)).await {
+                    error!("Attempted to emit reconnect message, but failed: {e}");
+                }
+            } else {
+                retry_queue.push_back(conn);
+            }
+        }
+        //endregion
         let _ = sleep(Duration::from_millis(GENERIC_WAIT_MILLIS)).await;
     }
     //endregion

@@ -12,7 +12,7 @@ use sunspec_rs::sunspec_models::ValueType;
 use tokio::task;
 use tokio::time::sleep;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct SunSpecUnit {
     pub addr: String,
     pub slave_id: u8,
@@ -82,6 +82,20 @@ impl SunSpecUnit {
             Some(m) => m,
         };
         let mut device_info = DeviceInfo::default();
+        let serial_number = match conn.clone().get_point(common.clone(), "SN", None).await {
+            Ok(p) => {
+                if let ValueType::String(str) = p.value.unwrap() {
+                    str
+                } else {
+                    return Err(GatewayError::Error(format!(
+                        "Received a point that wasn't a string for serial number."
+                    )));
+                }
+            }
+            Err(e) => {
+                return Err(GatewayError::Error(format!("{e}")));
+            }
+        };
 
         if let Ok(firmware) = conn.clone().get_point(common.clone(), "Vr", None).await {
             if let Some(value) = firmware.value {
@@ -102,20 +116,6 @@ impl SunSpecUnit {
             }
             Err(e) => {
                 return Err(GatewayError::Error(format!("fatal error, aborting: {e}")));
-            }
-        };
-        let serial_number = match conn.clone().get_point(common.clone(), "SN", None).await {
-            Ok(p) => {
-                if let ValueType::String(str) = p.value.unwrap() {
-                    str
-                } else {
-                    return Err(GatewayError::Error(format!(
-                        "Received a point that wasn't a string for serial number."
-                    )));
-                }
-            }
-            Err(e) => {
-                return Err(GatewayError::Error(format!("{e}")));
             }
         };
         let physical_model = match conn.clone().get_point(common.clone(), "Md", None).await {

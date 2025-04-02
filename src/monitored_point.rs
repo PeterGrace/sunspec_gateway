@@ -3,7 +3,7 @@ use crate::consts::*;
 
 use sunspec_rs::sunspec_models::Access;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MonitoredPoint {
     /// model number or name
     pub model: String,

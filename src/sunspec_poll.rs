@@ -347,7 +347,7 @@ pub async fn poll_loop(
             //endregion
 
             event!(
-                Level::INFO,
+                Level::DEBUG,
                 "{log_prefix}: Checking point {model}/{point_name}"
             );
             let input_only = requested_point_to_check.input_only.unwrap_or(false);
