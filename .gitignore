@@ -2,5 +2,5 @@
 /target
 **/*.swp
 **/sunspec_gateway.db*
-config-local.yaml
+config-*.yaml
 stats.so
