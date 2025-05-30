@@ -34,6 +34,7 @@ use utoipa_axum::router::OpenApiRouter;
 
 use crate::consts::*;
 use crate::ipc::{IPCMessage, InboundMessage, PublishMessage};
+use crate::modules::points::point_routes;
 use crate::mqtt_connection::MqttConnection;
 use crate::mqtt_poll::mqtt_poll_loop;
 use crate::state_mgmt::prepare_to_database;
@@ -63,7 +64,7 @@ use chrono::{DateTime, NaiveDateTime, TimeDelta, Utc};
 use std::time::Duration;
 use sunspec_unit::SunSpecUnit;
 use tokio::sync::{broadcast, mpsc, OnceCell, RwLock};
-use tokio::task::JoinSet;
+use tokio::task;
 use tokio::time::{sleep, timeout, Instant};
 use tower_http::cors::{Any, CorsLayer};
 use tower_sessions::cookie::time::Duration as CookieDuration;
@@ -88,7 +89,7 @@ pub enum GatewayError {
 
 lazy_static! {
     static ref SHUTDOWN: OnceCell<bool> = OnceCell::new();
-    static ref TASK_PILE: RwLock<JoinSet<Result<(),GatewayError>>> = RwLock::new(JoinSet::<Result<(),GatewayError>>::new());
+    static ref TASK_PILE: RwLock<task::JoinSet<Result<(),GatewayError>>> = RwLock::new(task::JoinSet::<Result<(),GatewayError>>::new());
       pub static ref API_DOC: OnceCell<utoipa::openapi::OpenApi> = OnceCell::new();
 
 
@@ -220,6 +221,10 @@ async fn main() {
             &format!("{API_VER}/{USERS_TAG}"),
             user_routes(state.clone()),
         )
+        .nest(
+            &format!("{API_VER}/{POINTS_TAG}"),
+            point_routes(state.clone()),
+        )
         .layer(auth_layer);
 
     let (router, api) = OpenApiRouter::with_openapi(api)
@@ -238,7 +243,12 @@ async fn main() {
     let listener = TcpListener::bind((Ipv6Addr::LOCALHOST, 8080))
         .await
         .expect("Failed to bind");
-    let _ = axum::serve(listener, app).await;
+    let _ = tokio::task::Builder::new()
+        .name("axum-listener")
+        .spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+
     //endregion
 
     //region create mqtt server connection and spawn mqtt thread

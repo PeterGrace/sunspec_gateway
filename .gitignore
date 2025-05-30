@@ -3,3 +3,4 @@
 **/*.swp
 **/sunspec_gateway.db*
 config-local.yaml
+stats.so

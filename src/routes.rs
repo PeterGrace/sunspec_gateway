@@ -18,6 +18,7 @@ pub const ROUTE_TAG_DESCRIPTION: &str = "Operations about routes";
 #[openapi(
     tags(
     (name = USERS_TAG, description = USERS_TAG_DESCRIPTION ),
+    (name = POINTS_TAG, description = POINTS_TAG_DESCRIPTION ),
     )
 )]
 pub struct ApiDoc;

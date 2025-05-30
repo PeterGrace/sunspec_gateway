@@ -9,6 +9,7 @@ use sqlx::SqlitePool;
 use std::error::Error;
 use utoipa::ToSchema;
 
+pub(crate) mod points;
 pub mod users;
 
 #[derive(PartialEq)]

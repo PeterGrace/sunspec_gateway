@@ -40,7 +40,8 @@ pub(crate) async fn auth_middleware(
                     None => {
                         info!("user {sub} is not in cache, fetching from database.");
                         //TODO: implement auth properly for your template project
-                        return Err(AuthError::NotImplemented);
+                        User::default()
+                        //return Err(AuthError::NotImplemented);
                         // match sqlx::query_as!(User, "SELECT * FROM users where login = $1", sub)
                         //     .fetch_one(&state.pool)
                         //     .await
@@ -74,21 +75,16 @@ pub(crate) async fn auth_middleware(
         }
         AuthToken::ApiKey(user_id) => {
             //TODO: implement auth properly for your template project
-            return Err(AuthError::NotImplemented);
-            // if let Ok(user) = sqlx::query_as!(User, "SELECT * FROM users where id = $1", user_id)
-            //     .fetch_one(&state.pool.clone())
-            //     .await
-            // {
-            //     match session.insert("user", user.clone()).await {
-            //         Ok(_) => {
-            //             debug!("Set user in session: {user:#?}");
-            //         }
-            //         Err(e) => {
-            //             error!("Couldn't set user in session: {e}");
-            //             return Err(AuthError::InvalidToken);
-            //         }
-            //     }
-            // }
+            let user = User::default();
+            match session.insert("user", user.clone()).await {
+                Ok(_) => {
+                    debug!("Set user in session: {user:#?}");
+                }
+                Err(e) => {
+                    error!("Couldn't set user in session: {e}");
+                    return Err(AuthError::InvalidToken);
+                }
+            }
         }
     }
 

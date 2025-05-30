@@ -167,7 +167,7 @@ where
             }
             let state = <dyn Any>::downcast_ref::<AppState>(state).expect("Invalid state type");
             //TODO: implement auth properly for your template project
-            Err(AuthError::NotImplemented)
+            Ok(AuthToken::ApiKey(1))
             // let rs = sqlx::query_as!(ApiKey, "SELECT * FROM api_keys where key = $1", token)
             //     .fetch_optional(&state.pool)
             //     .await;

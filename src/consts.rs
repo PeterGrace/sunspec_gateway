@@ -26,3 +26,6 @@ pub const API_PATH: &str = "/api/openapi.json";
 pub const SESSION_INACTIVITY_LIMIT_HOURS: i64 = 24;
 pub const JWT_SECRET: &str = "secret";
 pub const HEALTH_PATH: &str = "/api/health";
+
+pub const POINTS_TAG: &str = "points";
+pub const POINTS_TAG_DESCRIPTION: &str = "Points";
