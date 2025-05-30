@@ -1,3 +1,4 @@
+**/.idea
 /target
 **/*.swp
 **/sunspec_gateway.db*
