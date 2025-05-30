@@ -5,6 +5,8 @@ registry := "docker.io"
 image := "petergrace/sunspec_gateway"
 tag := `git describe --tags|| echo dev`
 
+all: build make-image
+
 build:
   cross build --release --target aarch64-unknown-linux-gnu
   cross build --release --target x86_64-unknown-linux-gnu
