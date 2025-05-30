@@ -17,6 +17,8 @@ make-image:
   -t {{registry}}/{{image}}:{{commit}} \
   -t {{registry}}/{{image}}:{{tag}} \
   .
+test:
+    CONFIG_FILE_PATH=./config-local.yaml cargo run
 
 release-patch:
   cargo release --no-publish --no-verify patch --execute
