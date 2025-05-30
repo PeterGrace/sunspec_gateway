@@ -67,7 +67,7 @@ pub async fn poll_loop(
             let time_pad = thread_rng().gen_range(0..(interval / 3)) as i64;
             let model = requested_point_to_check.model.clone();
             let point_name = requested_point_to_check.name.clone();
-            let uniqueid = format!("{sn}.{model}.{point_name}");
+            let mut uniqueid = format!("{sn}.{model}.{point_name}");
             let log_prefix = format!(
                 "[{}:{} {sn} {model}/{point_name} {idx}/{point_count}]",
                 unit.addr, unit.slave_id
@@ -370,10 +370,133 @@ pub async fn poll_loop(
                         .await;
                 }
             } else {
+                if requested_point_to_check.group_addresses.is_some() {
+                    for address in requested_point_to_check.clone().group_addresses.unwrap() {
+                        requested_point_to_check.this_address = Some(address);
+                        uniqueid = format!("{sn}.{model}.{point_name}.{address}");
+                        match unit
+                            .conn
+                            .clone()
+                            .get_point(
+                                md.unwrap().clone(),
+                                &requested_point_to_check.name,
+                                Some(1),
+                                Some(address),
+                            )
+                            .instrument(span!(Level::INFO, "modbus_read"))
+                            .await
+                        {
+                            Err(e) => {
+                                match e {
+                                    SunSpecPointError::GeneralError(e) => {
+                                        error!("{log_prefix}: General error reading point: {e}");
+                                        continue;
+                                    }
+                                    SunSpecPointError::DoesNotExist(e) => {
+                                        error!("{log_prefix}: Point specified does not exist: {e}");
+                                        continue;
+                                    }
+                                    SunSpecPointError::UndefinedError => {
+                                        warn!("{log_prefix}: Undefined error returned: {e}");
+                                        continue;
+                                    }
+                                    SunSpecPointError::CommError(e) => {
+                                        let _ = tx
+                                            .send(IPCMessage::PleaseReconnect(
+                                                unit.addr.clone(),
+                                                unit.slave_id,
+                                            ))
+                                            .instrument(span!(Level::INFO, "please_reconnect"))
+                                            .await;
+                                        // lets wait two seconds for the ipc to process.
+                                        let _ = sleep(Duration::from_millis(
+                                            MQTT_PROCESSING_PAD_MILLIS,
+                                        ))
+                                        .instrument(span!(Level::INFO, "sleep"))
+                                        .await;
+                                        return Err(GatewayError::CommunicationError(
+                                            e.to_string(),
+                                        ));
+                                    }
+                                }
+                            }
+                            Ok(recvd_point) => match recvd_point.clone().value {
+                                None => {
+                                    info!("{log_prefix}: Received none on match recvd_point.clone().value -- is this ok?")
+                                }
+                                Some(val) => {
+                                    let _v = recvd_point.clone();
+                                    let payloads = generate_payloads(
+                                        unit,
+                                        Some(&recvd_point),
+                                        &requested_point_to_check,
+                                        Some(&val),
+                                    )
+                                    .instrument(span!(Level::INFO, "generate_payloads"))
+                                    .await;
+
+                                    last_report.insert(uniqueid.clone(), Utc::now());
+                                    for payload in payloads {
+                                        if requested_point_to_check.homeassistant_discovery {
+                                            let _ = tx
+                                                .send(IPCMessage::Outbound(PublishMessage {
+                                                    topic: payload.config_topic,
+                                                    payload: Payload::Config(
+                                                        payload.config.clone(),
+                                                    ),
+                                                }))
+                                                .instrument(span!(
+                                                    Level::INFO,
+                                                    "outbound_config_send"
+                                                ))
+                                                .await;
+                                        }
+
+                                        let _ = tx
+                                            .send(IPCMessage::Outbound(PublishMessage {
+                                                topic: payload.state_topic,
+                                                payload: Payload::CurrentState(
+                                                    payload.state.clone(),
+                                                ),
+                                            }))
+                                            .instrument(span!(Level::INFO, "outbound_state_send"))
+                                            .await;
+                                        if let Err(e) = cull_records_to(
+                                            payload.config.clone().unique_id,
+                                            CULL_HISTORY_ROWS,
+                                        )
+                                        .instrument(span!(Level::INFO, "cull_records_in_sql"))
+                                        .await
+                                        {
+                                            warn!(
+                                        "{log_prefix}: Couldn't cull history for this point: {e}"
+                                    );
+                                        };
+                                        if let Err(e) =
+                                            write_payload_history(payload.config, payload.state)
+                                                .instrument(span!(
+                                                    Level::INFO,
+                                                    "write_payload_history"
+                                                ))
+                                                .await
+                                        {
+                                            warn!("{log_prefix}: Unable to store value in db: {e}");
+                                        }
+                                    }
+                                }
+                            },
+                        }
+                    }
+                }
                 match unit
                     .conn
                     .clone()
-                    .get_point(md.unwrap().clone(), &requested_point_to_check.name, None)
+                    .get_point(
+                        md.unwrap().clone(),
+                        &requested_point_to_check.name,
+                        None,
+                        None,
+                    )
                     .instrument(span!(Level::INFO, "modbus_read"))
                     .await
                 {
@@ -422,7 +545,7 @@ pub async fn poll_loop(
                             .instrument(span!(Level::INFO, "generate_payloads"))
                             .await;
 
-                            last_report.insert(uniqueid, Utc::now());
+                            last_report.insert(uniqueid.clone(), Utc::now());
                             for payload in payloads {
                                 if requested_point_to_check.homeassistant_discovery {
                                     let _ = tx

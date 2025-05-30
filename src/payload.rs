@@ -160,8 +160,14 @@ pub async fn generate_payloads(
     config_payload.state_class = monitored_point.state_class.clone();
     config_payload.expires_after = 300;
     config_payload.value_template = Some("{{ value_json.value }}".to_string());
-    config_payload.unique_id = format!("{sn}.{model}.{point_name}");
-    config_payload.entity_id = format!("sensor.{model}_{point_name}");
+    if let Some(group_address) = monitored_point.this_address {
+        config_payload.name = format!("{}: Module {group_address}", config_payload.name);
+        config_payload.unique_id = format!("{sn}.{model}.{point_name}.{group_address}");
+        config_payload.entity_id = format!("sensor.{model}_{point_name}.{group_address}");
+    } else {
+        config_payload.unique_id = format!("{sn}.{model}.{point_name}");
+        config_payload.entity_id = format!("sensor.{model}_{point_name}");
+    }
     config_payload.device = unit.device_info.clone();
     if val.is_some() && point_data.is_some() {
         match val.unwrap() {
@@ -323,11 +329,24 @@ pub async fn generate_payloads(
                     let mut config_payload = config_payload.clone();
                     let mut state_payload = state_payload.clone();
                     // configure this point's state addresses
-                    let config_topic = format!(
-                        "homeassistant/binary_sensor/{sn}/{model}_{point_name}_{state}/config"
-                    );
-                    let state_topic = format!("sunspec_gateway/{sn}/{model}/{point_name}_{state}");
-                    config_payload.unique_id = format!("{sn}.{model}.{point_name}.{state}");
+                    let config_topic: String;
+                    let state_topic: String;
+                    if let Some(group_address) = monitored_point.this_address {
+                        config_topic = format!(
+                            "homeassistant/binary_sensor/{sn}/{model}_{point_name}_{state}_{group_address}/config"
+                        );
+                        state_topic = format!(
+                            "sunspec_gateway/{sn}/{model}/{group_address}/{point_name}_{state}"
+                        );
+                        config_payload.unique_id =
+                            format!("{sn}.{model}.{point_name}.{state}.{group_address}");
+                    } else {
+                        config_topic = format!(
+                            "homeassistant/binary_sensor/{sn}/{model}_{point_name}_{state}/config"
+                        );
+                        state_topic = format!("sunspec_gateway/{sn}/{model}/{point_name}_{state}");
+                        config_payload.unique_id = format!("{sn}.{model}.{point_name}.{state}");
+                    }
                     config_payload.entity_id =
                         format!("binary_sensor.{model}_{point_name}_{state}");
                     config_payload.name = format!("{model}/{point_name}: {state}");
@@ -363,16 +382,34 @@ pub async fn generate_payloads(
                             // clone preexisiting objects
                             let mut config_payload = config_payload.clone();
                             let mut state_payload = state_payload.clone();
+                            let config_topic: String;
+                            let state_topic: String;
                             // configure this point's state addresses
-                            let config_topic = format!(
+                            if let Some(group_address) = monitored_point.this_address {
+                                config_topic = format!(
+                                    "homeassistant/binary_sensor/{sn}/{model}_{point_name}_{state}_{group_address}/config"
+                                );
+                                state_topic =
+                                    format!("sunspec_gateway/{sn}/{model}/{group_address}/{point_name}_{state}");
+                                config_payload.unique_id =
+                                    format!("{sn}.{model}.{point_name}.{state}.{group_address}");
+                                config_payload.entity_id = format!(
+                                    "binary_sensor.{model}_{point_name}_{state}.{group_address}"
+                                );
+                                config_payload.name =
+                                    format!("{model}/{point_name}.{group_address}: {state}");
+                            } else {
+                                config_topic = format!(
                                 "homeassistant/binary_sensor/{sn}/{model}_{point_name}_{state}/config"
                             );
-                            let state_topic =
-                                format!("sunspec_gateway/{sn}/{model}/{point_name}_{state}");
-                            config_payload.unique_id = format!("{sn}.{model}.{point_name}.{state}");
-                            config_payload.entity_id =
-                                format!("binary_sensor.{model}_{point_name}_{state}");
-                            config_payload.name = format!("{model}/{point_name}: {state}");
+                                state_topic =
+                                    format!("sunspec_gateway/{sn}/{model}/{point_name}_{state}");
+                                config_payload.unique_id =
+                                    format!("{sn}.{model}.{point_name}.{state}");
+                                config_payload.entity_id =
+                                    format!("binary_sensor.{model}_{point_name}_{state}");
+                                config_payload.name = format!("{model}/{point_name}: {state}");
+                            }
                             config_payload.state_topic = state_topic.clone();
                             config_payload.payload_on = Some(string_on.clone());
                             config_payload.payload_off = Some(string_off.clone());
@@ -398,8 +435,13 @@ pub async fn generate_payloads(
             ValueType::Pad => {}
         }
     }
-
-    let mut config_topic: String = format!("homeassistant/sensor/{sn}/{model}_{point_name}/config");
+    let mut config_topic: String;
+    if let Some(group_address) = monitored_point.this_address {
+        config_topic =
+            format!("homeassistant/sensor/{sn}/{model}_{point_name}_{group_address}/config");
+    } else {
+        config_topic = format!("homeassistant/sensor/{sn}/{model}_{point_name}/config");
+    };
     if matches!(monitored_point.write_mode, Access::ReadWrite) {
         config_payload.command_topic =
             Some(format!("sunspec_gateway/input/{sn}/{model}/{point_name}"));
@@ -440,8 +482,12 @@ pub async fn generate_payloads(
             }
         };
     }
-
-    let state_topic = format!("sunspec_gateway/{sn}/{model}/{point_name}");
+    let state_topic: String;
+    if let Some(group_address) = monitored_point.this_address {
+        state_topic = format!("sunspec_gateway/{sn}/{model}/{group_address}/{point_name}");
+    } else {
+        state_topic = format!("sunspec_gateway/{sn}/{model}/{point_name}");
+    }
 
     config_payload.state_topic = state_topic.clone();
 

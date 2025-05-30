@@ -82,7 +82,11 @@ impl SunSpecUnit {
             Some(m) => m,
         };
         let mut device_info = DeviceInfo::default();
-        let serial_number = match conn.clone().get_point(common.clone(), "SN", None).await {
+        let serial_number = match conn
+            .clone()
+            .get_point(common.clone(), "SN", None, None)
+            .await
+        {
             Ok(p) => {
                 if let ValueType::String(str) = p.value.unwrap() {
                     str
@@ -97,14 +101,22 @@ impl SunSpecUnit {
             }
         };
 
-        if let Ok(firmware) = conn.clone().get_point(common.clone(), "Vr", None).await {
+        if let Ok(firmware) = conn
+            .clone()
+            .get_point(common.clone(), "Vr", None, None)
+            .await
+        {
             if let Some(value) = firmware.value {
                 if let ValueType::String(ver) = value {
                     device_info.sw_version = ver;
                 }
             }
         }
-        let manufacturer: String = match conn.clone().get_point(common.clone(), "Mn", None).await {
+        let manufacturer: String = match conn
+            .clone()
+            .get_point(common.clone(), "Mn", None, None)
+            .await
+        {
             Ok(p) => {
                 if let ValueType::String(str) = p.value.unwrap() {
                     str
@@ -118,7 +130,11 @@ impl SunSpecUnit {
                 return Err(GatewayError::Error(format!("fatal error, aborting: {e}")));
             }
         };
-        let physical_model = match conn.clone().get_point(common.clone(), "Md", None).await {
+        let physical_model = match conn
+            .clone()
+            .get_point(common.clone(), "Md", None, None)
+            .await
+        {
             Ok(p) => {
                 if let ValueType::String(str) = p.value.unwrap() {
                     str

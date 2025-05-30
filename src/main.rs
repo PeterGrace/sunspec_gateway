@@ -102,7 +102,6 @@ async fn main() {
     //region initialize app and logging
     // disabling clap for the moment while I decide what I want to do with this vs. envvars
     //let cli = CliArgs::parse();
-    tokio_console_subscriber::init();
 
     register_metrics();
     APP_INFO
@@ -136,7 +135,7 @@ async fn main() {
         let _ = bcasttx.send(IPCMessage::Shutdown);
     });
 
-    let console_layer = console_subscriber::spawn();
+    let console_layer = tokio_console_subscriber::spawn();
     let env_filter = EnvFilter::try_from_default_env().unwrap_or(EnvFilter::new("INFO"));
     let format_layer = tracing_subscriber::fmt::layer()
         .event_format(

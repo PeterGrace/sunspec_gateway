@@ -37,6 +37,9 @@ pub struct MonitoredPoint {
     pub value_max: Option<f32>,
     /// how many standard deviations we'll allow before considering value nonsensical
     pub check_deviations: Option<u16>,
+    /// if point is part of a multiples group, which addresses to query
+    pub group_addresses: Option<Vec<u16>>,
+    pub this_address: Option<u16>,
 }
 
 impl MonitoredPoint {
@@ -81,6 +84,8 @@ impl MonitoredPoint {
             value_min: pc.value_min,
             value_max: pc.value_max,
             check_deviations: pc.check_deviations,
+            group_addresses: pc.group_addresses,
+            this_address: None,
         })
     }
 }
