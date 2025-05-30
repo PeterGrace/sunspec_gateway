@@ -4,20 +4,33 @@ extern crate strum;
 #[macro_use]
 extern crate thiserror;
 
+mod auth;
 mod cli_args;
 mod config_structs;
 mod consts;
 mod date_serializer;
 mod ipc;
+mod modules;
 mod monitored_point;
 mod mqtt_connection;
 mod mqtt_poll;
 mod payload;
+mod routes;
+mod state;
 mod state_mgmt;
 mod sunspec_poll;
 mod sunspec_unit;
 
+use crate::auth::token_middleware::auth_middleware;
 use crate::config_structs::GatewayConfig;
+use crate::routes::USERS_TAG;
+use axum::middleware;
+use std::net::Ipv6Addr;
+use tokio::net::TcpListener;
+use tower_sessions::Expiry;
+use tower_sessions::MemoryStore;
+use tower_sessions::SessionManagerLayer;
+use utoipa_axum::router::OpenApiRouter;
 
 use crate::consts::*;
 use crate::ipc::{IPCMessage, InboundMessage, PublishMessage};
@@ -40,15 +53,25 @@ use std::collections::VecDeque;
 use std::fs;
 use std::process;
 
+use crate::auth::token_extractor::JwksCache;
+use crate::modules::users::user_routes;
+use crate::routes::{openapi, register_routes, ApiDoc};
+use crate::state::AppState;
+use axum::http::Method;
+use axum::routing::get;
 use chrono::{DateTime, NaiveDateTime, TimeDelta, Utc};
 use std::time::Duration;
 use sunspec_unit::SunSpecUnit;
 use tokio::sync::{broadcast, mpsc, OnceCell, RwLock};
 use tokio::task::JoinSet;
 use tokio::time::{sleep, timeout, Instant};
+use tower_http::cors::{Any, CorsLayer};
+use tower_sessions::cookie::time::Duration as CookieDuration;
 use tracing::Instrument;
 use tracing_subscriber::fmt::format::FmtSpan;
 use tracing_subscriber::{prelude::*, EnvFilter, Registry};
+use utoipa::OpenApi;
+use utoipa_scalar::{Scalar, Servable};
 
 #[derive(Error, Debug, Default)]
 pub enum GatewayError {
@@ -66,6 +89,8 @@ pub enum GatewayError {
 lazy_static! {
     static ref SHUTDOWN: OnceCell<bool> = OnceCell::new();
     static ref TASK_PILE: RwLock<JoinSet<Result<(),GatewayError>>> = RwLock::new(JoinSet::<Result<(),GatewayError>>::new());
+      pub static ref API_DOC: OnceCell<utoipa::openapi::OpenApi> = OnceCell::new();
+
 
 
     //region create SETTINGS static object
@@ -155,6 +180,65 @@ async fn main() {
     if let Err(e) = prepare_to_database().await {
         die(&format!("Can't database: {e}"))
     }
+    //endregion
+
+    let user_cache = None;
+    let state = AppState {
+        jwks_cache: JwksCache::new(),
+        user_cache,
+    };
+
+    //region axum route setup and serve()
+    let session_store = MemoryStore::default();
+    let session_layer = SessionManagerLayer::new(session_store)
+        .with_secure(false)
+        .with_expiry(Expiry::OnInactivity(CookieDuration::hours(
+            SESSION_INACTIVITY_LIMIT_HOURS,
+        )));
+
+    let cors_layer = CorsLayer::new()
+        .allow_methods([
+            Method::OPTIONS,
+            Method::GET,
+            Method::PUT,
+            Method::POST,
+            Method::DELETE,
+        ])
+        .allow_origin(Any)
+        .allow_headers(Any);
+
+    let auth_layer = middleware::from_fn_with_state(state.clone(), auth_middleware);
+
+    let api = ApiDoc::openapi();
+
+    let public_routes = OpenApiRouter::new()
+        .merge(register_routes(state.clone()))
+        .route(API_PATH, get(openapi));
+
+    let protected_routes = OpenApiRouter::<AppState>::new()
+        .nest(
+            &format!("{API_VER}/{USERS_TAG}"),
+            user_routes(state.clone()),
+        )
+        .layer(auth_layer);
+
+    let (router, api) = OpenApiRouter::with_openapi(api)
+        .merge(public_routes)
+        .merge(protected_routes)
+        .layer(cors_layer)
+        .layer(session_layer)
+        .with_state(state)
+        .split_for_parts();
+
+    let app = router.merge(Scalar::with_url(SCALAR_PATH, api.clone()));
+    if let Err(e) = API_DOC.set(api) {
+        error!("Couldn't store api into document variable: {e}");
+    }
+
+    let listener = TcpListener::bind((Ipv6Addr::LOCALHOST, 8080))
+        .await
+        .expect("Failed to bind");
+    let _ = axum::serve(listener, app).await;
     //endregion
 
     //region create mqtt server connection and spawn mqtt thread
