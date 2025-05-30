@@ -9,7 +9,6 @@ mod config_structs;
 mod consts;
 mod date_serializer;
 mod ipc;
-mod metrics;
 mod monitored_point;
 mod mqtt_connection;
 mod mqtt_poll;
@@ -22,12 +21,10 @@ use crate::config_structs::GatewayConfig;
 
 use crate::consts::*;
 use crate::ipc::{IPCMessage, InboundMessage, PublishMessage};
-use crate::metrics::{register_metrics, APP_INFO, STATIC_PROM};
 use crate::mqtt_connection::MqttConnection;
 use crate::mqtt_poll::mqtt_poll_loop;
 use crate::state_mgmt::prepare_to_database;
 use crate::sunspec_poll::poll_loop;
-use actix_web::{App, HttpServer};
 
 use console_subscriber as tokio_console_subscriber;
 use futures::FutureExt;
@@ -103,24 +100,11 @@ async fn main() {
     // disabling clap for the moment while I decide what I want to do with this vs. envvars
     //let cli = CliArgs::parse();
 
-    register_metrics();
-    APP_INFO
-        .with_label_values(&[env!("CARGO_PKG_VERSION"), env!("GIT_HASH")])
-        .set(1_f64);
     debug!(
         "sunspec_gateway cargo:{}, githash:{}",
         env!("CARGO_PKG_VERSION"),
         env!("GIT_HASH")
     );
-
-    let server = HttpServer::new(move || App::new().wrap(STATIC_PROM.clone()))
-        .bind(("0.0.0.0", 9898))
-        .unwrap()
-        .run();
-
-    let _http_server_handle = tokio::task::Builder::new()
-        .name("http_metrics_server")
-        .spawn(server);
 
     let (tx, mut rx) = mpsc::channel(MPSC_BUFFER_SIZE);
     let (mqtt_tx, mqtt_rx) = mpsc::channel(MPSC_BUFFER_SIZE);
@@ -262,7 +246,6 @@ async fn main() {
     let mut msg_queue: VecDeque<PublishMessage> = VecDeque::new();
     let mut incoming_control_queue: VecDeque<InboundMessage> = VecDeque::new();
     loop {
-        let _ = STATIC_PROM.registry.gather();
         //endregion
         //region sunspec device channel loop handling
         while rx.len() > 0 {

@@ -1,6 +1,5 @@
 use crate::consts::MQTT_POLL_INTERVAL_MILLIS;
 use crate::ipc::{IPCMessage, InboundMessage, PublishMessage};
-use crate::metrics::MQTT_CONFIG_PAYLOADS_SENT;
 use crate::mqtt_connection::MqttConnection;
 use crate::payload::Payload;
 use crate::GatewayError;
@@ -168,8 +167,6 @@ pub async fn mqtt_poll_loop(
                                 if let Payload::Config(config) = msg.payload {
                                     let vals =
                                         config.unique_id.splitn(3, ".").collect::<Vec<&str>>();
-                                    let _ =
-                                        &MQTT_CONFIG_PAYLOADS_SENT.with_label_values(&vals).inc();
                                 };
                             }
                             Err(e) => {

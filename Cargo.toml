@@ -16,11 +16,9 @@ tracing = "0.1.37"
 tracing-subscriber = {version = "0.3.17", features = ["time"]}
 tracing-log = "0.1.3"
 clap = { version = "4.3.24", features = ["derive", "env"] }
-config = { version = "0.13.3", features = ["yaml"] }
 lazy_static = "1.4.0"
 anyhow = "1.0.75"
-strum = { version = "0.25.0", features = ["derive"] }
-strum_macros = "0.25.2"
+strum = { version = "0.25.0", features = ["derive", "strum_macros"] }
 futures = "0.3.28"
 rumqttc = "0.22.0"
 serde = {version="1.0.185", features=["derive"]}
@@ -31,7 +29,6 @@ sunspec_rs = {path="../sunspec_rs"}
 console-subscriber = "0.1.10"
 chrono = "0.4.28"
 rand = "0.8.5"
-crossterm = "0.27.0"
 thiserror = "1.0.48"
 sqlx = {version = "0.7.1", features = ["sqlite", "runtime-tokio-rustls"]}
 opentelemetry = {version="0.20.0",features = ["trace", "rt-tokio", "metrics", "logs_level_enabled"]}
@@ -42,9 +39,5 @@ opentelemetry-otlp = {version="0.13.0", features=["http-proto","reqwest-rustls",
 opentelemetry-semantic-conventions = "0.12.0"
 url = "2.4.1"
 num-traits = "0.2.16"
-actix-web = {version="4.3.1", features=["rustls"]}
-actix-web-prom = "0.6.0"
-metrics-process = "1.0.12"
 ctrlc = "3.4.1"
-reservoir-sampling = "0.5.1"
 uuid = { version = "1.15.1", features = ["v4"] }
