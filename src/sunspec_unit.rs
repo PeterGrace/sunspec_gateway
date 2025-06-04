@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use sunspec_rs::sunspec_connection::SunSpecConnection;
 use sunspec_rs::sunspec_data::SunSpecData;
-use sunspec_rs::sunspec_models::ValueType;
+use sunspec_rs::sunspec_models::{PointIdentifier, ValueType};
 use tokio::task;
 use tokio::time::sleep;
 
@@ -84,7 +84,7 @@ impl SunSpecUnit {
         let mut device_info = DeviceInfo::default();
         let serial_number = match conn
             .clone()
-            .get_point(common.clone(), "SN", None, None)
+            .get_point(common.clone(), PointIdentifier::Point("SN".to_string()))
             .await
         {
             Ok(p) => {
@@ -103,7 +103,7 @@ impl SunSpecUnit {
 
         if let Ok(firmware) = conn
             .clone()
-            .get_point(common.clone(), "Vr", None, None)
+            .get_point(common.clone(), PointIdentifier::Point("Vr".to_string()))
             .await
         {
             if let Some(value) = firmware.value {
@@ -114,7 +114,7 @@ impl SunSpecUnit {
         }
         let manufacturer: String = match conn
             .clone()
-            .get_point(common.clone(), "Mn", None, None)
+            .get_point(common.clone(), PointIdentifier::Point("Mn".to_string()))
             .await
         {
             Ok(p) => {
@@ -132,7 +132,7 @@ impl SunSpecUnit {
         };
         let physical_model = match conn
             .clone()
-            .get_point(common.clone(), "Md", None, None)
+            .get_point(common.clone(), PointIdentifier::Point("Md".to_string()))
             .await
         {
             Ok(p) => {

@@ -32,13 +32,12 @@ pub struct MonitoredPoint {
     /// this point is only for input and cannot be read.
     pub input_only: Option<bool>,
     /// the minimum value we expect to see for this point.
-    pub value_min: Option<f32>,
+    pub value_min: Option<f64>,
     /// the maximum value we expect to see for this point.
-    pub value_max: Option<f32>,
+    pub value_max: Option<f64>,
     /// how many standard deviations we'll allow before considering value nonsensical
     pub check_deviations: Option<u16>,
-    /// if point is part of a multiples group, which addresses to query
-    pub group_addresses: Option<Vec<u16>>,
+    pub catalog_ref: Option<String>,
     pub this_address: Option<u16>,
 }
 
@@ -84,7 +83,7 @@ impl MonitoredPoint {
             value_min: pc.value_min,
             value_max: pc.value_max,
             check_deviations: pc.check_deviations,
-            group_addresses: pc.group_addresses,
+            catalog_ref: None,
             this_address: None,
         })
     }

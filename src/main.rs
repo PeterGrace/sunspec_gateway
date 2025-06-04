@@ -161,6 +161,9 @@ async fn main() {
         .with(env_filter)
         .with(format_layer);
 
+    tracing::subscriber::set_global_default(subscriber)
+        .expect("Can't set global subscriber for logging.");
+
     let mut tracer: Option<Tracer> = None;
     let config = SETTINGS.read().await;
     // let tracer_layer = if config.tracing.is_some() {
@@ -291,6 +294,7 @@ async fn main() {
         for s in u.slaves.iter() {
             let addr = u.addr.clone();
             let slave = s.clone().to_string();
+            info!("connecting to unit {addr} - {slave}");
             match tokio::time::timeout(
                 Duration::from_secs(5),
                 SunSpecUnit::new(addr.clone(), slave),
@@ -298,14 +302,17 @@ async fn main() {
             .await
             {
                 Ok(good) => match good {
-                    Ok(p) => devices.push(p),
+                    Ok(p) => {
+                        info!("connected");
+                        devices.push(p)
+                    }
                     Err(e) => {
-                        warn!("Unable to create connection to SunSpec Unit: {e}");
+                        error!("Unable to create connection to SunSpec Unit: {e}");
                         retry_queue.push_back((addr, *s, Utc::now()));
                     }
                 },
                 Err(e) => {
-                    warn!("Timeout connecting to sunspec unit: {e}");
+                    error!("Timeout connecting to sunspec unit: {e}");
                     retry_queue.push_back((addr, *s, Utc::now()));
                 }
             };
@@ -320,7 +327,7 @@ async fn main() {
         let bcast_rx = broadcast_tx.clone().subscribe();
         let task_name = format!("poll_loop_{}", d.serial_number);
         let span = tracing::info_span!("task", name = task_name.as_str());
-        let _ = tokio::task::Builder::new()
+        let bar = task::Builder::new()
             .name(&format!("worker-{}", d.clone().serial_number))
             .spawn(
                 async move {
@@ -331,6 +338,9 @@ async fn main() {
                 }
                 .instrument(span),
             );
+        if bar.is_err() {
+            error!("unit poll_loop crashed out");
+        }
     }
 
     //endregion

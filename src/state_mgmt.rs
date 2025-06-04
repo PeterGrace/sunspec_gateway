@@ -22,12 +22,12 @@ pub struct point_history {
 
 #[derive(Default, Debug, Clone, FromRow)]
 pub struct AggregatedMeasurements {
-    pub min: f32,
-    pub max: f32,
-    pub avg: f32,
-    pub median: f32,
+    pub min: f64,
+    pub max: f64,
+    pub avg: f64,
+    pub median: f64,
     pub count: i16,
-    pub stdev: f32,
+    pub stdev: f64,
 }
 
 //const DB_URL: &str = "sqlite://sunspec_gateway.db";

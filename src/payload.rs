@@ -7,6 +7,7 @@ use chrono::{DateTime, Utc};
 use num_traits::pow::Pow;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use sunspec_rs::sunspec_connection::apply_scale_factor;
 use sunspec_rs::sunspec_models::{Access, Point, ValueType};
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
@@ -21,7 +22,7 @@ pub struct DeviceInfo {
 #[derive(Deserialize, Serialize, Debug, Default, Clone)]
 #[serde(untagged)]
 pub enum PayloadValueType {
-    Float(f32),
+    Float(f64),
     Int(i64),
     String(String),
     Boolean(bool),
@@ -186,12 +187,8 @@ pub async fn generate_payloads(
 
                 // if we are employing a scale factor on an int, it becomes a float
                 if let Some(scale) = monitored_point.scale_factor {
-                    let scaled_value: f32;
-                    if scale >= 0 {
-                        scaled_value = (*int as f32 * (f32::pow(10.0, scale.abs() as f32))).into();
-                    } else {
-                        scaled_value = (*int as f32 / (f32::pow(10.0, scale.abs() as f32))).into();
-                    }
+                    let scaled_value: f64;
+                    let scaled_value = apply_scale_factor(*int as f64, scale);
                     if monitored_point.precision.is_some() {
                         config_payload.suggested_display_precision = monitored_point.precision;
                     } else {
@@ -215,7 +212,7 @@ pub async fn generate_payloads(
                             if monitored_point.check_deviations.is_some() {
                                 deviations = monitored_point.check_deviations.unwrap();
                             }
-                            let stdev_checked: f32;
+                            let stdev_checked: f64;
                             if ag.stdev.abs() < 1.0 {
                                 stdev_checked = ag.stdev.abs() + 1.0
                             } else {
@@ -225,7 +222,7 @@ pub async fn generate_payloads(
                                 // our point is lower than the lowest seen so far
                                 let delta_median = scaled_value - ag.median;
                                 if delta_median.abs()
-                                    > (ag.median + (stdev_checked * deviations as f32))
+                                    > (ag.median + (stdev_checked * deviations as f64))
                                 {
                                     warn!("{log_prefix}: {scaled_value} is {:#.02} deviations away from median. {ag:#?}",delta_median/stdev_checked);
                                 }
@@ -254,13 +251,9 @@ pub async fn generate_payloads(
                 } else {
                     config_payload.native_uom = point_data.unwrap().units.clone();
                 }
-                let scaled_value: f32;
+                let scaled_value: f64;
                 if let Some(scale) = monitored_point.scale_factor {
-                    if scale >= 0 {
-                        scaled_value = (float * f32::pow(10.0, scale.abs() as f32)).into();
-                    } else {
-                        scaled_value = (float / f32::pow(10.0, scale.abs() as f32)).into();
-                    }
+                    scaled_value = apply_scale_factor(*float, scale);
                 } else {
                     scaled_value = *float;
                 }
@@ -282,7 +275,7 @@ pub async fn generate_payloads(
                         if monitored_point.check_deviations.is_some() {
                             deviations = monitored_point.check_deviations.unwrap();
                         }
-                        let stdev_checked: f32;
+                        let stdev_checked: f64;
                         if ag.stdev.abs() < 1.0 {
                             stdev_checked = ag.stdev.abs() + 1.0
                         } else {
@@ -292,7 +285,7 @@ pub async fn generate_payloads(
                             // our point is lower than the lowest seen so far
                             let delta_median = scaled_value - ag.median;
                             if delta_median.abs()
-                                > (ag.median + (stdev_checked * deviations as f32))
+                                > (ag.median + (stdev_checked * deviations as f64))
                             {
                                 warn!("{log_prefix}: {scaled_value} is {:#.02} deviations away from median. {ag:#?}",delta_median/stdev_checked);
                             }

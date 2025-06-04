@@ -48,10 +48,10 @@ pub struct PointConfig {
     pub scale_factor: Option<i32>,
     pub inputs: Option<InputType>,
     pub input_only: Option<bool>,
-    pub value_min: Option<f32>,
-    pub value_max: Option<f32>,
+    pub value_min: Option<f64>,
+    pub value_max: Option<f64>,
     pub check_deviations: Option<u16>,
-    pub group_addresses: Option<Vec<u16>>,
+    pub catalog_ref: Option<String>,
 }
 
 #[derive(Deserialize, Clone, Debug, Default)]

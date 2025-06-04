@@ -12,7 +12,7 @@ use rand::{thread_rng, Rng};
 use std::collections::HashMap;
 
 use sunspec_rs::sunspec_connection::SunSpecPointError;
-use sunspec_rs::sunspec_models::ValueType;
+use sunspec_rs::sunspec_models::{PointIdentifier, ValueType};
 use tokio::sync::broadcast::error::TryRecvError;
 use tokio::sync::broadcast::Receiver;
 use tokio::sync::mpsc::Sender;
@@ -104,9 +104,11 @@ pub async fn poll_loop(
                                                 .clone()
                                                 .set_point(
                                                     md.clone(),
-                                                    &inmsg.point_name,
+                                                    PointIdentifier::Point(
+                                                        inmsg.point_name.clone(),
+                                                    ),
                                                     ValueType::Integer(
-                                                        symbol.symbol.parse::<i32>().unwrap(),
+                                                        symbol.symbol.parse::<i64>().unwrap(),
                                                     ),
                                                 )
                                                 .instrument(span!(Level::INFO, "modbus_write"))
@@ -160,7 +162,7 @@ pub async fn poll_loop(
                                                                             .clone()
                                                                             .set_point(
                                                                                 md.clone(),
-                                                                                &inmsg.point_name,
+                                                                                PointIdentifier::Point(inmsg.point_name.clone()),
                                                                                 ValueType::Integer(
                                                                                     payload_val
                                                                                         .try_into()
@@ -207,7 +209,11 @@ pub async fn poll_loop(
                                                                         .clone()
                                                                         .set_point(
                                                                             md.clone(),
-                                                                            &inmsg.point_name,
+                                                                            PointIdentifier::Point(
+                                                                                inmsg
+                                                                                    .point_name
+                                                                                    .clone(),
+                                                                            ),
                                                                             ValueType::Integer(
                                                                                 payload_val
                                                                                     .try_into()
@@ -238,10 +244,10 @@ pub async fn poll_loop(
                                                     }
                                                     InputType::Number(val) => {
                                                         debug!("Inbound payload is a number!");
-                                                        match inmsg.payload.parse::<i32>() {
+                                                        match inmsg.payload.parse::<i64>() {
                                                             Ok(parsed) => {
-                                                                if parsed >= val.min
-                                                                    && parsed <= val.max
+                                                                if parsed >= val.min as i64
+                                                                    && parsed <= val.max as i64
                                                                 {
                                                                     let md = unit
                                                                         .conn
@@ -253,7 +259,11 @@ pub async fn poll_loop(
                                                                         .clone()
                                                                         .set_point(
                                                                             md.clone(),
-                                                                            &inmsg.point_name,
+                                                                            PointIdentifier::Point(
+                                                                                inmsg
+                                                                                    .point_name
+                                                                                    .clone(),
+                                                                            ),
                                                                             ValueType::Integer(
                                                                                 parsed,
                                                                             ),
@@ -370,132 +380,12 @@ pub async fn poll_loop(
                         .await;
                 }
             } else {
-                if requested_point_to_check.group_addresses.is_some() {
-                    for address in requested_point_to_check.clone().group_addresses.unwrap() {
-                        requested_point_to_check.this_address = Some(address);
-                        uniqueid = format!("{sn}.{model}.{point_name}.{address}");
-                        match unit
-                            .conn
-                            .clone()
-                            .get_point(
-                                md.unwrap().clone(),
-                                &requested_point_to_check.name,
-                                Some(1),
-                                Some(address),
-                            )
-                            .instrument(span!(Level::INFO, "modbus_read"))
-                            .await
-                        {
-                            Err(e) => {
-                                match e {
-                                    SunSpecPointError::GeneralError(e) => {
-                                        error!("{log_prefix}: General error reading point: {e}");
-                                        continue;
-                                    }
-                                    SunSpecPointError::DoesNotExist(e) => {
-                                        error!("{log_prefix}: Point specified does not exist: {e}");
-                                        continue;
-                                    }
-                                    SunSpecPointError::UndefinedError => {
-                                        warn!("{log_prefix}: Undefined error returned: {e}");
-                                        continue;
-                                    }
-                                    SunSpecPointError::CommError(e) => {
-                                        let _ = tx
-                                            .send(IPCMessage::PleaseReconnect(
-                                                unit.addr.clone(),
-                                                unit.slave_id,
-                                            ))
-                                            .instrument(span!(Level::INFO, "please_reconnect"))
-                                            .await;
-                                        // lets wait two seconds for the ipc to process.
-                                        let _ = sleep(Duration::from_millis(
-                                            MQTT_PROCESSING_PAD_MILLIS,
-                                        ))
-                                        .instrument(span!(Level::INFO, "sleep"))
-                                        .await;
-                                        return Err(GatewayError::CommunicationError(
-                                            e.to_string(),
-                                        ));
-                                    }
-                                }
-                            }
-                            Ok(recvd_point) => match recvd_point.clone().value {
-                                None => {
-                                    info!("{log_prefix}: Received none on match recvd_point.clone().value -- is this ok?")
-                                }
-                                Some(val) => {
-                                    let _v = recvd_point.clone();
-                                    let payloads = generate_payloads(
-                                        unit,
-                                        Some(&recvd_point),
-                                        &requested_point_to_check,
-                                        Some(&val),
-                                    )
-                                    .instrument(span!(Level::INFO, "generate_payloads"))
-                                    .await;
-
-                                    last_report.insert(uniqueid.clone(), Utc::now());
-                                    for payload in payloads {
-                                        if requested_point_to_check.homeassistant_discovery {
-                                            let _ = tx
-                                                .send(IPCMessage::Outbound(PublishMessage {
-                                                    topic: payload.config_topic,
-                                                    payload: Payload::Config(
-                                                        payload.config.clone(),
-                                                    ),
-                                                }))
-                                                .instrument(span!(
-                                                    Level::INFO,
-                                                    "outbound_config_send"
-                                                ))
-                                                .await;
-                                        }
-
-                                        let _ = tx
-                                            .send(IPCMessage::Outbound(PublishMessage {
-                                                topic: payload.state_topic,
-                                                payload: Payload::CurrentState(
-                                                    payload.state.clone(),
-                                                ),
-                                            }))
-                                            .instrument(span!(Level::INFO, "outbound_state_send"))
-                                            .await;
-                                        if let Err(e) = cull_records_to(
-                                            payload.config.clone().unique_id,
-                                            CULL_HISTORY_ROWS,
-                                        )
-                                        .instrument(span!(Level::INFO, "cull_records_in_sql"))
-                                        .await
-                                        {
-                                            warn!(
-                                        "{log_prefix}: Couldn't cull history for this point: {e}"
-                                    );
-                                        };
-                                        if let Err(e) =
-                                            write_payload_history(payload.config, payload.state)
-                                                .instrument(span!(
-                                                    Level::INFO,
-                                                    "write_payload_history"
-                                                ))
-                                                .await
-                                        {
-                                            warn!("{log_prefix}: Unable to store value in db: {e}");
-                                        }
-                                    }
-                                }
-                            },
-                        }
-                    }
-                }
                 match unit
                     .conn
                     .clone()
                     .get_point(
                         md.unwrap().clone(),
-                        &requested_point_to_check.name,
-                        None,
-                        None,
+                        PointIdentifier::Point(requested_point_to_check.name.clone()),
                     )
                     .instrument(span!(Level::INFO, "modbus_read"))
                     .await
