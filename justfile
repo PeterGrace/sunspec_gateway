@@ -20,6 +20,8 @@ make-image:
 test:
     RUST_LOG=debug CONFIG_FILE_PATH=./config-dersim.yaml cargo run - -vvv
 
+test-local:
+    RUST_LOG=warn CONFIG_FILE_PATH=./config-local.yaml cargo run - -vvv
 release-patch:
   cargo release --no-publish --no-verify patch --execute
 release-minor:

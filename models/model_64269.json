@@ -1,0 +1,109 @@
+{
+  "group": {
+    "name": "DCB105_Manufacturing_Details",
+    "type": "group",
+    "label": "DCB105 battery module details",
+    "desc": "DCB105 battery module details for easier service",
+    "points": [
+      {
+        "name": "ID",
+        "type": "uint16",
+        "size": 1,
+        "mandatory": "M",
+        "static": "S",
+        "label": "Model ID",
+        "desc": "Model identifier",
+        "value": 64269
+      },
+      {
+        "name": "L",
+        "type": "uint16",
+        "size": 1,
+        "mandatory": "M",
+        "static": "S",
+        "label": "Model Length",
+        "desc": "Model length"
+      },
+      {
+        "name": "Pad1",
+        "type": "pad",
+        "size": 1,
+        "desc": "Reserved for future use"
+      },
+      {
+        "name": "Pad2",
+        "type": "pad",
+        "size": 1,
+        "desc": "Reserved for future use"
+      },
+      {
+        "name": "Pad3",
+        "type": "pad",
+        "size": 1,
+        "desc": "Reserved for future use"
+      },
+      {
+        "name": "Pad4",
+        "type": "pad",
+        "size": 1,
+        "desc": "Reserved for future use"
+      }
+    ],
+    "groups": [
+	  {
+        "name": "DLG_module",
+        "type": "group",
+        "count": 0,
+        "points": [
+          {
+            "name": "SrNo",
+            "type": "string",
+            "size": 8,
+            "mandatory": "M",
+            "label": "Full Serial Number",
+            "desc": "Full Serial Number"
+          },
+          {
+            "name": "ManuDate",
+            "type": "string",
+            "size": 3,
+            "mandatory": "M",
+            "label": "Manufacturing Date",
+            "desc": "Manufacturing Date DDMMYY"
+          },
+          {
+            "name": "Pad5",
+            "type": "pad",
+            "size": 1,
+            "desc": "Reserved for future use"
+          },
+          {
+            "name": "Pad6",
+            "type": "pad",
+            "size": 1,
+            "desc": "Reserved for future use"
+          },
+          {
+            "name": "Pad7",
+            "type": "pad",
+            "size": 1,
+            "desc": "Reserved for future use"
+          },
+          {
+            "name": "Pad8",
+            "type": "pad",
+            "size": 1,
+            "desc": "Reserved for future use"
+          },
+          {
+            "name": "Pad9",
+            "type": "pad",
+            "size": 1,
+            "desc": "Reserved for future use"
+          }
+        ]
+      }
+    ]
+  },
+  "id": 64269
+}

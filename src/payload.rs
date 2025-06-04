@@ -166,14 +166,8 @@ pub async fn generate_payloads(
     config_payload.state_class = monitored_point.state_class.clone();
     config_payload.expires_after = 300;
     config_payload.value_template = Some("{{ value_json.value }}".to_string());
-    if let Some(group_address) = monitored_point.this_address {
-        config_payload.name = format!("{}: Module {group_address}", config_payload.name);
-        config_payload.unique_id = format!("{sn}.{model}.{point_name}.{group_address}");
-        config_payload.entity_id = format!("sensor.{model}_{point_name}.{group_address}");
-    } else {
-        config_payload.unique_id = format!("{sn}.{model}.{point_name}");
-        config_payload.entity_id = format!("sensor.{model}_{point_name}");
-    }
+    config_payload.unique_id = format!("{sn}.{model}.{point_name}");
+    config_payload.entity_id = format!("sensor.{sn}_{model}_{point_name}");
     config_payload.device = unit.device_info.clone();
     if val.is_some() && point_data.is_some() {
         match val.unwrap() {
@@ -306,7 +300,10 @@ pub async fn generate_payloads(
                     if literal.label.is_some() {
                         config_payload.name = literal.label.clone().unwrap();
                     }
-                    state_payload.label = literal.clone().label;
+                    match monitored_point.clone().display_name {
+                        Some(s) => state_payload.label = Some(s),
+                        None => state_payload.label = literal.clone().label,
+                    };
                     state_payload.description = literal.clone().description;
                     state_payload.notes = literal.clone().notes;
                 }
