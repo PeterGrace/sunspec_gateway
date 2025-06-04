@@ -145,7 +145,12 @@ pub async fn generate_payloads(
 ) -> Vec<CompoundPayload> {
     let sn = unit.serial_number.clone();
     let model = monitored_point.model.clone();
-    let point_name = monitored_point.name.clone();
+    let point_identifier = monitored_point.name.clone().to_string();
+    let point_name = point_identifier
+        .replace("[", "")
+        .replace("]", "")
+        .replace(".", "_");
+
     let log_prefix = format!(
         "[{}:{} {sn} {model}/{point_name}]",
         unit.addr, unit.slave_id

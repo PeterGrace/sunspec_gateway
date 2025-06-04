@@ -1,4 +1,4 @@
-use crate::config_structs::InputType;
+use crate::config_structs::{InputType, PointConfig};
 use crate::consts::*;
 use crate::ipc::{IPCMessage, PublishMessage};
 use crate::monitored_point::MonitoredPoint;
@@ -33,13 +33,24 @@ pub async fn poll_loop(
     let mut points: Vec<MonitoredPoint> = vec![];
     let mut last_report: HashMap<String, DateTime<Utc>> = HashMap::new();
     for (id, _) in unit.conn.models.iter() {
-        let _mname = format!("{id}");
         for (model, config_points) in config.models.iter() {
             for point in config_points {
+                if point.point.is_none() && point.catalog_ref.is_none() {
+                    error!("There is a defined point in model {id} that has neither point name nor catalog ref.  Skipping.");
+                    continue;
+                }
+                let mut monitored_point_target: PointIdentifier = {
+                    if point.catalog_ref.is_some() {
+                        PointIdentifier::Catalog(point.catalog_ref.clone().unwrap())
+                    } else {
+                        PointIdentifier::Point(point.point.clone().unwrap())
+                    }
+                };
+
                 match MonitoredPoint::new(model.clone(), point.clone()) {
                     Ok(p) => points.push(p),
                     Err(e) => {
-                        warn!(%sn, "unable to create MonitoredPoint for {id}/{}: {e}", point.point);
+                        warn!(%sn, "unable to create MonitoredPoint for {id}/{}: {e}", monitored_point_target);
                         continue;
                     }
                 };
@@ -129,11 +140,13 @@ pub async fn poll_loop(
                                     }
                                 } else {
                                     debug!("This inbound message has no symbol.  Need to check for number");
-                                    let config = SETTINGS.read().await;
-                                    let points = config.models.get(&inmsg.model).unwrap().clone();
-                                    drop(config);
+
+                                    let points: Vec<PointConfig> = {
+                                        let config = SETTINGS.read().await;
+                                        config.models.get(&inmsg.model).unwrap().clone()
+                                    };
                                     for point in points {
-                                        if point.point == inmsg.point_name {
+                                        if point.clone().name() == inmsg.point_name {
                                             debug!("Found point config, now validating number");
                                             if let Some(input) = point.inputs {
                                                 match input {
@@ -383,10 +396,7 @@ pub async fn poll_loop(
                 match unit
                     .conn
                     .clone()
-                    .get_point(
-                        md.unwrap().clone(),
-                        PointIdentifier::Point(requested_point_to_check.name.clone()),
-                    )
+                    .get_point(md.unwrap().clone(), requested_point_to_check.name.clone())
                     .instrument(span!(Level::INFO, "modbus_read"))
                     .await
                 {

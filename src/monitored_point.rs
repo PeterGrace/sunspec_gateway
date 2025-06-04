@@ -1,14 +1,15 @@
 use crate::config_structs::{InputType, PointConfig};
 use crate::consts::*;
+use anyhow::bail;
 
-use sunspec_rs::sunspec_models::Access;
+use sunspec_rs::sunspec_models::{Access, PointIdentifier};
 
 #[derive(Debug, Clone)]
 pub struct MonitoredPoint {
     /// model number or name
     pub model: String,
     /// point name in model (Evt, Status, Ena, V, Mn, etc)
-    pub name: String,
+    pub name: PointIdentifier,
     /// how frequently this point should be measured
     pub interval: u64,
     /// the device class homeassistant should use (current, voltage, power, energy, etc)
@@ -37,13 +38,12 @@ pub struct MonitoredPoint {
     pub value_max: Option<f64>,
     /// how many standard deviations we'll allow before considering value nonsensical
     pub check_deviations: Option<u16>,
-    pub catalog_ref: Option<String>,
     pub this_address: Option<u16>,
 }
 
 impl MonitoredPoint {
     pub fn new(model: String, pc: PointConfig) -> anyhow::Result<Self> {
-        debug!("Creating a monitoredpoint for {model}/{}", pc.point);
+        debug!("Creating a monitoredpoint for {model}/{}", pc.name());
 
         let interval_checked: u64;
         if pc.interval < LOWER_LIMIT_INTERVAL {
@@ -66,10 +66,22 @@ impl MonitoredPoint {
             Some(v) => v,
         };
 
+        if pc.point.is_none() && pc.catalog_ref.is_none() {
+            let msg = format!("There is a defined point in model {model} that has neither point name nor catalog ref.  Skipping.");
+            error!(msg);
+            bail!(msg);
+        }
+        let mut monitored_point_target: PointIdentifier = {
+            if pc.catalog_ref.is_some() {
+                PointIdentifier::Catalog(pc.catalog_ref.clone().unwrap())
+            } else {
+                PointIdentifier::Point(pc.point.clone().unwrap())
+            }
+        };
         Ok(MonitoredPoint {
             model,
             display_name: pc.display_name,
-            name: pc.point,
+            name: monitored_point_target,
             interval: interval_checked,
             device_class: pc.device_class,
             state_class: pc.state_class,
@@ -83,7 +95,6 @@ impl MonitoredPoint {
             value_min: pc.value_min,
             value_max: pc.value_max,
             check_deviations: pc.check_deviations,
-            catalog_ref: None,
             this_address: None,
         })
     }

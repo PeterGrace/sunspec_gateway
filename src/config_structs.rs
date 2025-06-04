@@ -36,7 +36,8 @@ pub enum InputType {
 
 #[derive(Deserialize, Clone, Debug, Default)]
 pub struct PointConfig {
-    pub point: String,
+    pub point: Option<String>,
+    pub catalog_ref: Option<String>,
     pub interval: u64,
     pub device_class: Option<String>,
     pub display_name: Option<String>,
@@ -51,7 +52,17 @@ pub struct PointConfig {
     pub value_min: Option<f64>,
     pub value_max: Option<f64>,
     pub check_deviations: Option<u16>,
-    pub catalog_ref: Option<String>,
+}
+impl PointConfig {
+    pub fn name(&self) -> String {
+        if self.catalog_ref.is_some() {
+            return format!("{}", self.catalog_ref.clone().unwrap());
+        }
+        if self.point.is_some() {
+            return format!("{}", self.point.clone().unwrap());
+        }
+        "".to_string()
+    }
 }
 
 #[derive(Deserialize, Clone, Debug, Default)]
