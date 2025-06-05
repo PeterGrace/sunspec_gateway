@@ -5,7 +5,7 @@ pub const CULL_HISTORY_ROWS: u8 = 200_u8;
 
 // SUNSPEC_DEVICE_CONNECT_TIMEOUT was historically 5 seconds, but I upped it to 10 when we needed to
 // add parsing for json models, which requires full model reads.
-pub const SUNSPEC_DEVICE_CONNECT_TIMEOUT: u64 = 10;
+pub const SUNSPEC_DEVICE_CONNECT_TIMEOUT: u64 = 15;
 
 pub const CHECK_DEVIATIONS_COUNT: u16 = 10_u16;
 
