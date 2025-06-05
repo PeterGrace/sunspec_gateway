@@ -71,7 +71,9 @@ pub async fn poll_loop(
         );
         let _enter_single = single_point_span.enter();
 
+        let mut remove_points: Vec<PointIdentifier> = vec![];
         let point_count = points.len();
+
         for (idx, requested_point_to_check) in points.iter_mut().enumerate() {
             //region assign variables
             let interval = requested_point_to_check.interval as i64;
@@ -407,7 +409,8 @@ pub async fn poll_loop(
                                 continue;
                             }
                             SunSpecPointError::DoesNotExist(e) => {
-                                error!("{log_prefix}: Point specified does not exist: {e}");
+                                error!("{log_prefix}: Point specified does not exist, will remove from future checks: {e}");
+                                remove_points.push(requested_point_to_check.name.clone());
                                 continue;
                             }
                             SunSpecPointError::UndefinedError => {
@@ -487,6 +490,15 @@ pub async fn poll_loop(
                 }
             }
             //endregion
+        }
+
+        // although we keep track of points to remove in a vector, keeping track of updated indices
+        // after removing items from the array would be a pain, so we'll just pop one of them for now
+        // and catch any new deletes on follow-on loops.
+        if remove_points.len() > 0 {
+            for rp in remove_points {
+                points = points.into_iter().filter(|p| p.name != rp).collect();
+            }
         }
 
         //debug!(%addr, %sn, "Device tick");
