@@ -501,7 +501,7 @@ pub async fn poll_loop(
             }
         }
 
-        //debug!(%addr, %sn, "Device tick");
+        debug!(%addr, %sn, "Device tick");
         let _ = sleep(Duration::from_secs(MINIMUM_QUERY_INTERVAL_SECS.into()))
             .instrument(span!(Level::INFO, "main-loop-sleep"))
             .await;

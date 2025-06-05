@@ -295,7 +295,7 @@ async fn main() {
             let slave = s.clone().to_string();
             info!("connecting to unit {addr} - {slave}");
             match tokio::time::timeout(
-                Duration::from_secs(5),
+                Duration::from_secs(SUNSPEC_DEVICE_CONNECT_TIMEOUT),
                 SunSpecUnit::new(addr.clone(), slave),
             )
             .await
