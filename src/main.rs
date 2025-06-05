@@ -151,7 +151,6 @@ async fn main() {
         .event_format(
             tracing_subscriber::fmt::format()
                 .with_file(true)
-                .with_thread_ids(true)
                 .with_line_number(true),
         )
         .with_span_events(FmtSpan::NONE);
@@ -312,7 +311,7 @@ async fn main() {
                     }
                 },
                 Err(e) => {
-                    error!("Timeout connecting to sunspec unit: {e}");
+                    error!("Timeout connecting to sunspec unit {addr}/{s}: {e}");
                     retry_queue.push_back((addr, *s, Utc::now()));
                 }
             };
@@ -354,61 +353,63 @@ async fn main() {
         //region sunspec device channel loop handling
         while rx.len() > 0 {
             match rx.try_recv() {
-                Ok(ipcm) => match ipcm {
-                    IPCMessage::Shutdown => {
-                        unreachable!();
-                    }
-                    IPCMessage::Outbound(o) => {
-                        msg_queue.push_front(o);
-                    }
-                    IPCMessage::Error(e) => {
-                        die(&format!("serial_number={}: {}", e.serial_number, e.msg));
-                    }
-                    IPCMessage::PleaseReconnect(addr, slave) => {
-                        let tx = tx.clone();
-                        let bcast_rx = broadcast_tx.subscribe();
-                        info!("Reconnect requested for {addr}/{slave}");
-                        let ssu: Option<SunSpecUnit> = match tokio::time::timeout(
-                            Duration::from_secs(5),
-                            SunSpecUnit::new(addr.clone(), slave.to_string()),
-                        )
-                        .await
-                        {
-                            Ok(good) => match good {
-                                Ok(unit) => Some(unit),
+                Ok(ipcm) => {
+                    match ipcm {
+                        IPCMessage::Shutdown => {
+                            unreachable!();
+                        }
+                        IPCMessage::Outbound(o) => {
+                            msg_queue.push_front(o);
+                        }
+                        IPCMessage::Error(e) => {
+                            die(&format!("serial_number={}: {}", e.serial_number, e.msg));
+                        }
+                        IPCMessage::PleaseReconnect(addr, slave) => {
+                            let tx = tx.clone();
+                            let bcast_rx = broadcast_tx.subscribe();
+                            warn!("Reconnect requested for {addr}/{slave}");
+                            let ssu: Option<SunSpecUnit> = match tokio::time::timeout(
+                                Duration::from_secs(5),
+                                SunSpecUnit::new(addr.clone(), slave.to_string()),
+                            )
+                            .await
+                            {
+                                Ok(good) => match good {
+                                    Ok(unit) => Some(unit),
+                                    Err(e) => {
+                                        warn!("{addr}:{slave} - Couldn't reconnect to sunspec unit: {e}");
+                                        retry_queue.push_back((addr, slave, Utc::now()));
+                                        None
+                                    }
+                                },
                                 Err(e) => {
-                                    warn!("Couldn't reconnect to sunspec unit: {e}");
+                                    warn!("{addr}:{slave} - Couldn't create new sunspecunit to replace dead conn: {e}");
                                     retry_queue.push_back((addr, slave, Utc::now()));
                                     None
                                 }
-                            },
-                            Err(e) => {
-                                warn!("Couldn't create new sunspecunit to replace dead conn: {e}");
-                                retry_queue.push_back((addr, slave, Utc::now()));
-                                None
+                            };
+                            if ssu.is_some() {
+                                let unit = ssu.unwrap();
+                                let mut tasks = TASK_PILE.write().await;
+                                let build = tokio::task::Builder::new();
+                                tasks
+                                    .build_task()
+                                    .name(&format!("worker-{}", unit.serial_number))
+                                    .spawn(async move {
+                                        match poll_loop(&unit, tx, bcast_rx).await {
+                                            Ok(_) => Ok(()),
+                                            Err(e) => return Err(e),
+                                        }
+                                    })
+                                    .unwrap();
                             }
-                        };
-                        if ssu.is_some() {
-                            let unit = ssu.unwrap();
-                            let mut tasks = TASK_PILE.write().await;
-                            let build = tokio::task::Builder::new();
-                            tasks
-                                .build_task()
-                                .name(&format!("worker-{}", unit.serial_number))
-                                .spawn(async move {
-                                    match poll_loop(&unit, tx, bcast_rx).await {
-                                        Ok(_) => Ok(()),
-                                        Err(e) => return Err(e),
-                                    }
-                                })
-                                .unwrap();
+                        }
+                        IPCMessage::Inbound(_) => {
+                            // we don't send inbounds to mqtt
+                            unreachable!();
                         }
                     }
-                    IPCMessage::Inbound(_) => {
-                        // we don't send inbounds to mqtt
-                        unreachable!();
-                    }
-                },
+                }
                 Err(_) => {}
             }
         }
