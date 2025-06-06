@@ -20,6 +20,28 @@ use tokio::time::{sleep, Duration};
 use tracing::Instrument;
 use tracing::Level;
 
+struct PollLoopGuard {
+    serial_number: String,
+    addr: String,
+    slave_id: u8,
+    start_time: DateTime<Utc>,
+}
+impl Drop for PollLoopGuard {
+    fn drop(&mut self) {
+        // This logging happens BEFORE Rust automatically frees the struct's memory
+        let duration = Utc::now() - self.start_time;
+        error!(
+            "Poll loop ending for unit {} (addr: {}:{}). Run duration: {}s",
+            self.serial_number,
+            self.addr,
+            self.slave_id,
+            duration.num_seconds()
+        );
+        // After this method returns, Rust will automatically drop the String fields
+        // and free the struct's memory
+    }
+}
+
 #[instrument(skip_all)]
 pub async fn poll_loop(
     unit: &SunSpecUnit,
@@ -32,6 +54,14 @@ pub async fn poll_loop(
     let config = SETTINGS.read().await;
     let mut points: Vec<MonitoredPoint> = vec![];
     let mut last_report: HashMap<String, DateTime<Utc>> = HashMap::new();
+
+    let _guard = PollLoopGuard {
+        serial_number: unit.serial_number.clone(),
+        addr: unit.addr.clone(),
+        slave_id: unit.slave_id,
+        start_time: Utc::now(),
+    };
+
     for (id, _) in unit.conn.models.iter() {
         for (model, config_points) in config.models.iter() {
             for point in config_points {
@@ -316,14 +346,17 @@ pub async fn poll_loop(
                                 }
                             }
                         }
-                        IPCMessage::Outbound(_) => {
-                            todo!()
+                        IPCMessage::Outbound(o) => {
+                            error!("{log_prefix}: Received outbound message, but we're not expecting any: {o:#?}");
+                            continue;
                         }
-                        IPCMessage::PleaseReconnect(_, _) => {
-                            todo!()
+                        IPCMessage::PleaseReconnect(addr, slave) => {
+                            error!("Received a pleasereconnect but its unhandled");
+                            return Err(GatewayError::ExitingThread);
                         }
-                        IPCMessage::Error(_) => {
-                            todo!()
+                        IPCMessage::Error(e) => {
+                            error!("Received miscellaneous error via ipc: {e:#?}");
+                            continue;
                         }
                     }
                 }

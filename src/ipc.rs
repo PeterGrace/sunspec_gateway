@@ -8,13 +8,13 @@ pub struct InboundMessage {
     pub payload: String,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct PublishMessage {
     pub(crate) topic: String,
     pub(crate) payload: Payload,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct IPCError {
     pub serial_number: String,
     pub msg: String,

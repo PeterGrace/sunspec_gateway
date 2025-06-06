@@ -125,6 +125,10 @@ async fn main() {
     //region initialize app and logging
     // disabling clap for the moment while I decide what I want to do with this vs. envvars
     //let cli = CliArgs::parse();
+    std::panic::set_hook(Box::new(|panic_info| {
+        error!("Thread panicked: {}", panic_info);
+        //die("thread panic");
+    }));
 
     debug!(
         "sunspec_gateway cargo:{}, githash:{}",
@@ -369,7 +373,7 @@ async fn main() {
                             let bcast_rx = broadcast_tx.subscribe();
                             warn!("Reconnect requested for {addr}/{slave}");
                             let ssu: Option<SunSpecUnit> = match tokio::time::timeout(
-                                Duration::from_secs(5),
+                                Duration::from_secs(SUNSPEC_DEVICE_CONNECT_TIMEOUT),
                                 SunSpecUnit::new(addr.clone(), slave.to_string()),
                             )
                             .await
@@ -390,18 +394,31 @@ async fn main() {
                             };
                             if ssu.is_some() {
                                 let unit = ssu.unwrap();
+                                warn!(
+                                    "{}/{} - Initial reconnection initiated, starting fresh task",
+                                    unit.addr, unit.slave_id
+                                );
                                 let mut tasks = TASK_PILE.write().await;
                                 let build = tokio::task::Builder::new();
+                                let taskname = format!("worker-{}", unit.serial_number);
                                 tasks
                                     .build_task()
-                                    .name(&format!("worker-{}", unit.serial_number))
+                                    .name(&taskname.clone())
                                     .spawn(async move {
                                         match poll_loop(&unit, tx, bcast_rx).await {
-                                            Ok(_) => Ok(()),
-                                            Err(e) => return Err(e),
+                                            Ok(_) => {
+                                                error!("Exited... OK? from the sunspec poll?  Unpossible!");
+                                                Ok(())
+                                            },
+                                            Err(e) => {
+                                                error!("{taskname} thread exited in error: {e}");
+                                                return Err(e)
+                                            },
                                         }
                                     })
                                     .unwrap();
+                            } else {
+                                error!("Reconnect was unsuccessful.");
                             }
                         }
                         IPCMessage::Inbound(_) => {
@@ -474,9 +491,11 @@ async fn main() {
                     Some(t) => {
                         match t {
                             Ok(t1) => match t1 {
-                                Ok(_) => {}
+                                Ok(_) => {
+                                    error!("Task exited, which should not happen.  Hopefully reconnecting.")
+                                }
                                 Err(e) => {
-                                    error!("{e}");
+                                    error!("Task exited with Ok(Err(e)): {e}");
                                 }
                             },
                             Err(e) => {
@@ -486,12 +505,12 @@ async fn main() {
                         }
                     }
                     None => {
-                        // TODO: what does none mean here?
+                        // No tasks waiting to report in
                     }
                 }
             }
             None => {
-                // no tasks waiting to report in
+                // no tasks are ready to be queried
             }
         }
 
