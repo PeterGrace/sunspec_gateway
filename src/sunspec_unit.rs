@@ -6,7 +6,7 @@ use anyhow::bail;
 
 use std::time::Duration;
 
-use sunspec_rs::sunspec_connection::SunSpecConnection;
+use sunspec_rs::sunspec_connection::{SunSpecConnection, TlsConfig};
 use sunspec_rs::sunspec_data::SunSpecData;
 use sunspec_rs::sunspec_models::{PointIdentifier, ValueType};
 use tokio::task;
@@ -24,7 +24,11 @@ pub struct SunSpecUnit {
 }
 
 impl SunSpecUnit {
-    pub async fn new(addr: String, slave_id: String) -> Result<Self, GatewayError> {
+    pub async fn new(
+        addr: String,
+        slave_id: String,
+        tls: Option<TlsConfig>,
+    ) -> Result<Self, GatewayError> {
         let sid: u8 = match slave_id.parse() {
             Ok(id) => id,
             Err(e) => {
@@ -33,7 +37,7 @@ impl SunSpecUnit {
                 )));
             }
         };
-        let mut conn = match SunSpecConnection::new(addr.clone(), Some(sid), false).await {
+        let mut conn = match SunSpecConnection::new(addr.clone(), Some(sid), false, tls).await {
             Ok(c) => c,
             Err(e) => {
                 return Err(GatewayError::Error(format!(

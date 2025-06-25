@@ -4,3 +4,5 @@
 **/sunspec_gateway.db*
 config-*.yaml
 stats.so
+**/*.crt
+**/*.key

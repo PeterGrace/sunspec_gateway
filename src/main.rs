@@ -62,6 +62,7 @@ use axum::http::Method;
 use axum::routing::get;
 use chrono::{DateTime, NaiveDateTime, TimeDelta, Utc};
 use std::time::Duration;
+use sunspec_rs::sunspec_connection::TlsConfig;
 use sunspec_unit::SunSpecUnit;
 use tokio::sync::{broadcast, mpsc, OnceCell, RwLock};
 use tokio::task;
@@ -300,7 +301,7 @@ async fn main() {
             info!("connecting to unit {addr} - {slave}");
             match tokio::time::timeout(
                 Duration::from_secs(SUNSPEC_DEVICE_CONNECT_TIMEOUT),
-                SunSpecUnit::new(addr.clone(), slave),
+                SunSpecUnit::new(addr.clone(), slave, u.tls.clone()),
             )
             .await
             {
@@ -371,10 +372,17 @@ async fn main() {
                         IPCMessage::PleaseReconnect(addr, slave) => {
                             let tx = tx.clone();
                             let bcast_rx = broadcast_tx.subscribe();
+                            let mut tls: Option<TlsConfig> = None;
                             warn!("Reconnect requested for {addr}/{slave}");
+                            for u in config.units.clone() {
+                                if u.addr == addr && u.slaves.contains(&slave) {
+                                    tls = u.tls.clone();
+                                    break;
+                                }
+                            }
                             let ssu: Option<SunSpecUnit> = match tokio::time::timeout(
                                 Duration::from_secs(SUNSPEC_DEVICE_CONNECT_TIMEOUT),
-                                SunSpecUnit::new(addr.clone(), slave.to_string()),
+                                SunSpecUnit::new(addr.clone(), slave.to_string(), tls),
                             )
                             .await
                             {

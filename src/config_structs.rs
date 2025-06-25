@@ -1,5 +1,6 @@
 use serde::Deserialize;
 use std::collections::HashMap;
+use sunspec_rs::sunspec_connection::TlsConfig;
 
 #[derive(Deserialize, Clone, Debug, Default)]
 pub struct TracingConfig {
@@ -10,6 +11,7 @@ pub struct TracingConfig {
 pub struct UnitConfig {
     pub addr: String,
     pub slaves: Vec<u8>,
+    pub tls: Option<TlsConfig>,
 }
 #[derive(Deserialize, Clone, Debug)]
 pub struct Switchable {
