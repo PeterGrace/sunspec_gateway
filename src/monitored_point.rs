@@ -42,7 +42,7 @@ pub struct MonitoredPoint {
 }
 
 impl MonitoredPoint {
-    pub fn new(model: String, pc: PointConfig) -> anyhow::Result<Self> {
+    pub fn new(model: String, pc: PointConfig, hass_enabled: Option<bool>) -> anyhow::Result<Self> {
         debug!("Creating a monitoredpoint for {model}/{}", pc.name());
 
         let interval_checked: u64;
@@ -61,9 +61,15 @@ impl MonitoredPoint {
                 }
             }
         };
-        let homeassistant_discovery = match pc.homeassistant {
-            None => true,
-            Some(v) => v,
+        let homeassistant_discovery = {
+            if let Some(v) = hass_enabled {
+                match v {
+                    true => pc.homeassistant.unwrap_or_else(|| true),
+                    false => false,
+                }
+            } else {
+                pc.homeassistant.unwrap_or_else(|| true)
+            }
         };
 
         if pc.point.is_none() && pc.catalog_ref.is_none() {

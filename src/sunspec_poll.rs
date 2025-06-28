@@ -77,7 +77,7 @@ pub async fn poll_loop(
                     }
                 };
 
-                match MonitoredPoint::new(model.clone(), point.clone()) {
+                match MonitoredPoint::new(model.clone(), point.clone(), config.hass_enabled) {
                     Ok(p) => points.push(p),
                     Err(e) => {
                         warn!(%sn, "unable to create MonitoredPoint for {id}/{}: {e}", monitored_point_target);

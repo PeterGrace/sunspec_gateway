@@ -69,6 +69,7 @@ impl PointConfig {
 
 #[derive(Deserialize, Clone, Debug, Default)]
 pub struct GatewayConfig {
+    pub hass_enabled: Option<bool>,
     pub units: Vec<UnitConfig>,
     pub models: HashMap<String, Vec<PointConfig>>,
     pub mqtt_server_addr: String,
