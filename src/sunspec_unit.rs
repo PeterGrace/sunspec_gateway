@@ -1,7 +1,7 @@
 use crate::consts::*;
 use crate::monitored_point::MonitoredPoint;
 use crate::payload::DeviceInfo;
-use crate::{GatewayError, SHUTDOWN};
+use crate::{GatewayError, MODEL_HASH, SHUTDOWN};
 use anyhow::bail;
 
 use std::time::Duration;
@@ -49,6 +49,11 @@ impl SunSpecUnit {
 
         match conn.populate_models(&data).await {
             Ok(m) => {
+                {
+                    let mut mh = MODEL_HASH.write().await;
+                    let key = format!("{}/{}", addr, slave_id);
+                    mh.insert(key, m.clone());
+                }
                 conn.models = m;
             }
             Err(e) => {

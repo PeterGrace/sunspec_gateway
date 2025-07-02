@@ -50,7 +50,7 @@ use opentelemetry::sdk::{trace, Resource};
 use opentelemetry::KeyValue;
 use opentelemetry_otlp::WithExportConfig;
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::fs;
 use std::process;
 
@@ -62,6 +62,7 @@ use axum::http::Method;
 use axum::routing::get;
 use chrono::{DateTime, NaiveDateTime, TimeDelta, Utc};
 use std::time::Duration;
+use sunspec_rs::model_data::ModelData;
 use sunspec_rs::sunspec_connection::TlsConfig;
 use sunspec_unit::SunSpecUnit;
 use tokio::sync::{broadcast, mpsc, OnceCell, RwLock};
@@ -91,9 +92,9 @@ pub enum GatewayError {
 lazy_static! {
     static ref SHUTDOWN: OnceCell<bool> = OnceCell::new();
     static ref TASK_PILE: RwLock<task::JoinSet<Result<(),GatewayError>>> = RwLock::new(task::JoinSet::<Result<(),GatewayError>>::new());
-      pub static ref API_DOC: OnceCell<utoipa::openapi::OpenApi> = OnceCell::new();
+    pub static ref API_DOC: OnceCell<utoipa::openapi::OpenApi> = OnceCell::new();
 
-
+    static ref MODEL_HASH: RwLock<HashMap<String, HashMap<u16, ModelData>>> = RwLock::new(HashMap::new());
 
     //region create SETTINGS static object
     static ref SETTINGS: RwLock<GatewayConfig> = RwLock::new({
@@ -221,16 +222,16 @@ async fn main() {
 
     let public_routes = OpenApiRouter::new()
         .merge(register_routes(state.clone()))
+        .nest(
+            &format!("{API_VER}/{POINTS_TAG}"),
+            point_routes(state.clone()),
+        )
         .route(API_PATH, get(openapi));
 
     let protected_routes = OpenApiRouter::<AppState>::new()
         .nest(
             &format!("{API_VER}/{USERS_TAG}"),
             user_routes(state.clone()),
-        )
-        .nest(
-            &format!("{API_VER}/{POINTS_TAG}"),
-            point_routes(state.clone()),
         )
         .layer(auth_layer);
 
