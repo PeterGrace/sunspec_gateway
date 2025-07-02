@@ -248,7 +248,7 @@ async fn main() {
         error!("Couldn't store api into document variable: {e}");
     }
 
-    let listener = TcpListener::bind((Ipv6Addr::LOCALHOST, 8080))
+    let listener = TcpListener::bind((Ipv6Addr::UNSPECIFIED, 8080))
         .await
         .expect("Failed to bind");
     let _ = tokio::task::Builder::new()
