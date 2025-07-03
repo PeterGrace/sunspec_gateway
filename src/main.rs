@@ -60,6 +60,7 @@ use crate::modules::users::user_routes;
 use crate::routes::{openapi, register_routes, ApiDoc};
 use crate::state::AppState;
 use axum::http::Method;
+use axum::response::Redirect;
 use axum::routing::get;
 use chrono::{DateTime, NaiveDateTime, TimeDelta, Utc};
 use std::time::Duration;
@@ -245,7 +246,9 @@ async fn main() {
         .with_state(state)
         .split_for_parts();
 
-    let app = router.merge(Scalar::with_url(SCALAR_PATH, api.clone()));
+    let app = router
+        .merge(Scalar::with_url(SCALAR_PATH, api.clone()))
+        .route("/", get(redirect_to_ui));
     if let Err(e) = API_DOC.set(api) {
         error!("Couldn't store api into document variable: {e}");
     }
@@ -589,4 +592,8 @@ pub fn make_tracer(url: String, sample: f32) -> Tracer {
         .install_batch(opentelemetry::runtime::Tokio)
         .expect("Can't create tracer");
     otlp_tracer
+}
+
+async fn redirect_to_ui() -> Redirect {
+    Redirect::permanent("/ui")
 }
