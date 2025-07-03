@@ -7,6 +7,7 @@ use async_trait::async_trait;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::{debug_handler, Json};
+use cached::proc_macro::cached;
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, SqlitePool};
 use std::collections::HashMap;
@@ -27,7 +28,7 @@ pub(crate) fn point_routes(state: AppState) -> OpenApiRouter<AppState> {
 }
 pub struct Point;
 /// a given point inside of a model
-#[derive(Serialize, Deserialize, ToSchema, Debug, Default)]
+#[derive(Serialize, Deserialize, ToSchema, Debug, Default, Clone)]
 pub struct PointResponse {
     /// model number
     pub model: i32,
@@ -38,7 +39,7 @@ pub struct PointResponse {
 }
 
 /// A model containing all points associated with this model
-#[derive(Serialize, Deserialize, ToSchema, Debug, Default)]
+#[derive(Serialize, Deserialize, ToSchema, Debug, Default, Clone)]
 pub struct ModelResponse {
     /// model id
     pub model: i32,
@@ -50,7 +51,7 @@ pub struct ModelResponse {
     pub points: Vec<PointResponse>,
 }
 /// A single unit containing a unit string and its array of models
-#[derive(Serialize, Deserialize, ToSchema, Debug, Default)]
+#[derive(Serialize, Deserialize, ToSchema, Debug, Default, Clone)]
 pub struct UnitResponse {
     /// unit in ip:port/slave_id format
     pub unit: String,
@@ -58,7 +59,7 @@ pub struct UnitResponse {
     pub models: Vec<ModelResponse>,
 }
 /// A list of models and points for a specific unit
-#[derive(Serialize, Deserialize, ToSchema, Debug, Default)]
+#[derive(Serialize, Deserialize, ToSchema, Debug, Default, Clone)]
 pub struct UnitList {
     /// A list of unit-models
     units: Vec<UnitResponse>,
@@ -90,8 +91,12 @@ pub async fn get_all_points(
     State(state): State<AppState>,
     session: Session,
 ) -> Result<Json<UnitList>, (StatusCode, AppAPIResponse)> {
-    let mh = MODEL_HASH.read().await;
+    Ok(get_all_points_from_hash().await)
+}
 
+#[cached(time = 10)]
+async fn get_all_points_from_hash() -> Json<UnitList> {
+    let mh = MODEL_HASH.read().await;
     let mut response_list: UnitList = UnitList::default();
     for (unit, models) in mh.iter() {
         let mut built_unit = UnitResponse::default();
@@ -134,7 +139,7 @@ pub async fn get_all_points(
         }
         response_list.units.push(built_unit);
     }
-    Ok(Json(response_list))
+    Json(response_list)
 }
 
 #[debug_handler]
