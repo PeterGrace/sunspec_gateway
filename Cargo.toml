@@ -47,7 +47,7 @@ openssl = {  version = "0.10.72", features=["vendored"] }
 axum = { version = "0.8.4", features = ["http2", "macros"] }
 utoipa-axum = "0.2.0"
 utoipa-scalar = { version = "0.3.0", features = ["axum"] }
-tower-http = { version = "0.6.4", features = ["cors"] }
+tower-http = { version = "0.6.4", features = ["cors", "fs"] }
 jsonwebtoken = "9.3.1"
 async-trait = "0.1.88"
 tower-sessions = "0.14.0"

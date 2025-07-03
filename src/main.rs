@@ -27,6 +27,7 @@ use crate::routes::USERS_TAG;
 use axum::middleware;
 use std::net::Ipv6Addr;
 use tokio::net::TcpListener;
+use tower_http::services::ServeDir;
 use tower_sessions::Expiry;
 use tower_sessions::MemoryStore;
 use tower_sessions::SessionManagerLayer;
@@ -222,6 +223,7 @@ async fn main() {
 
     let public_routes = OpenApiRouter::new()
         .merge(register_routes(state.clone()))
+        .nest_service("/ui", ServeDir::new("ui"))
         .nest(
             &format!("{API_VER}/{POINTS_TAG}"),
             point_routes(state.clone()),
