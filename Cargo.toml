@@ -1,6 +1,6 @@
 [package]
 name = "sunspec_gateway"
-version = "0.8.6"
+version = "0.8.7"
 edition = "2021"
 authors = ["Peter Grace"]
 description = "Translate sunspec-compliant equipment metrics into MQTT"
