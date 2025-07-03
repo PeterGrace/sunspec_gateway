@@ -1,6 +1,6 @@
 import { UnitList, AppAPIResponse } from '../types/api';
 
-const API_BASE_URL = 'https://sungateway.gfd.dev'; // Replace with your actual API URL
+const API_BASE_URL = ''; // Empty string since we're connecting to our own instance, but could be set with a remote instance if needed
 
 export class ApiService {
   static async getAllPoints(): Promise<UnitList> {
