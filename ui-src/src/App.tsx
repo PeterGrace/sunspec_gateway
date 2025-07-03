@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Zap, Server, Cpu, BarChart3 } from 'lucide-react';
+import { Zap, Server, Cpu, BarChart3, ChevronRight, ChevronDown } from 'lucide-react';
 import { ApiService } from './services/api';
 import { UnitList } from './types/api';
 import { SearchBar } from './components/SearchBar';
@@ -9,6 +9,7 @@ import { UnitCard } from './components/UnitCard';
 import { StatsCard } from './components/StatsCard';
 import { FilterPanel } from './components/FilterPanel';
 import { YamlModal } from './components/YamlModal';
+import { PointsTable } from './components/PointsTable';
 
 function App() {
   const [data, setData] = useState<UnitList | null>(null);
@@ -16,7 +17,7 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [showFilters, setShowFilters] = useState(false);
-  const [viewMode, setViewMode] = useState<'units' | 'points'>('units');
+  const [viewMode, setViewMode] = useState<'units' | 'points'>('points');
   const [selectedPoint, setSelectedPoint] = useState<{ modelId: number; pointId: string } | null>(null);
   const [filters, setFilters] = useState({
     model: ''
@@ -51,11 +52,19 @@ function App() {
   const filteredData = useMemo(() => {
     if (!data) return null;
 
-    const filtered = data.units.filter(unit => {
-      // Search filter
-      const matchesSearch = searchTerm === '' || 
-        unit.unit.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        unit.models.some(model => 
+    const filtered = data.units.map(unit => {
+      // First filter models within the unit
+      let filteredModels = unit.models;
+      
+      if (filters.model !== '') {
+        filteredModels = unit.models.filter(model => 
+          model.model.toString() === filters.model
+        );
+      }
+      
+      // Apply search filter to the filtered models
+      if (searchTerm !== '') {
+        filteredModels = filteredModels.filter(model =>
           model.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
           model.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
           model.points.some(point => 
@@ -63,12 +72,19 @@ function App() {
             point.description.toLowerCase().includes(searchTerm.toLowerCase())
           )
         );
+      }
+      
+      return {
+        ...unit,
+        models: filteredModels
+      };
+    }).filter(unit => {
+      // Search filter
+      const matchesSearch = searchTerm === '' || 
+        unit.unit.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        unit.models.length > 0; // Unit matches if it has any models after filtering
 
-      // Model filter
-      const matchesModel = filters.model === '' || 
-        unit.models.some(model => model.model.toString() === filters.model);
-
-      return matchesSearch && matchesModel;
+      return matchesSearch;
     });
 
     return { units: filtered };
@@ -136,7 +152,7 @@ function App() {
       return matchesSearch && matchesModel;
     });
   }, [deduplicatedPoints, searchTerm, filters]);
-
+  
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-50">
@@ -232,6 +248,43 @@ function App() {
                   </span>
                 )}
               </h2>
+              {/* Active Filter Indicators */}
+              {(searchTerm || filters.model) && (
+                <div className="flex items-center space-x-2">
+                  {searchTerm && (
+                    <span className="inline-flex items-center px-3 py-1 rounded-full text-xs bg-green-100 text-green-700 border border-green-200">
+                      <span className="mr-1">🔍</span>
+                      Search: "{searchTerm}"
+                      <button
+                        onClick={() => setSearchTerm('')}
+                        className="ml-2 text-green-600 hover:text-green-800"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  )}
+                  {filters.model && (
+                    <span className="inline-flex items-center px-3 py-1 rounded-full text-xs bg-blue-100 text-blue-700 border border-blue-200">
+                      <span className="mr-1">🏷️</span>
+                      Model: {(() => {
+                        if (data) {
+                          for (const unit of data.units) {
+                            const model = unit.models.find(m => m.model.toString() === filters.model);
+                            if (model) return model.name;
+                          }
+                        }
+                        return `Model ${filters.model}`;
+                      })()}
+                      <button
+                        onClick={() => handleFilterChange('model', '')}
+                        className="ml-2 text-blue-600 hover:text-blue-800"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
             <div className="flex items-center space-x-2">
               <button
@@ -268,41 +321,11 @@ function App() {
               ))}
             </div>
           ) : viewMode === 'points' && filteredDeduplicatedPoints.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {filteredDeduplicatedPoints.map((item, index) => (
-                <div key={`${item.point.name}-${index}`} className="bg-white border border-slate-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer group">
-                  <div className="flex items-start space-x-3">
-                    <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                      <BarChart3 className="w-5 h-5 text-purple-600" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h4 className="font-semibold text-slate-800 truncate">{item.point.name}</h4>
-                      <p className="text-sm text-slate-600 mt-1 line-clamp-2">{item.point.description}</p>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <span className="text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded-full">
-                          {item.models.length} model{item.models.length !== 1 ? 's' : ''}
-                        </span>
-                        <span className="text-xs bg-green-100 text-green-600 px-2 py-1 rounded-full">
-                          {item.units.length} unit{item.units.length !== 1 ? 's' : ''}
-                        </span>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handlePointClick(item.point.model, item.point.name);
-                          }}
-                          className="text-xs bg-blue-600 text-white px-2 py-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-200 hover:bg-blue-700"
-                        >
-                          Configure
-                        </button>
-                      </div>
-                      <div className="mt-2 text-xs text-slate-500">
-                        Models: {item.models.join(', ')}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
+            <PointsTable 
+              points={filteredDeduplicatedPoints}
+              onPointClick={handlePointClick}
+              data={data}
+            />
           ) : (
             <div className="text-center py-12">
               <Server className="w-12 h-12 text-slate-300 mx-auto mb-4" />

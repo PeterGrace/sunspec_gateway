@@ -22,7 +22,7 @@ export const ModelCard: React.FC<ModelCardProps> = ({ model, onPointClick }) => 
   };
 
   return (
-    <div className="bg-white border border-slate-200 rounded-lg shadow-sm hover:shadow-md transition-all duration-200">
+    <div className="bg-slate-50 border border-slate-200 rounded-lg hover:bg-slate-100 transition-all duration-200">
       <div 
         className="p-4 flex items-center justify-between cursor-pointer"
         onClick={() => setIsExpanded(!isExpanded)}
@@ -32,8 +32,9 @@ export const ModelCard: React.FC<ModelCardProps> = ({ model, onPointClick }) => 
             {getModelIcon(model.model)}
           </div>
           <div>
-            <h3 className="font-semibold text-slate-800">{model.name}</h3>
+            <h3 className="font-semibold text-slate-800 text-base">{model.name}</h3>
             <p className="text-sm text-slate-500">{model.description}</p>
+            <p className="text-xs text-slate-400 mt-1">Model {model.model}</p>
           </div>
         </div>
         <div className="flex items-center space-x-2">
@@ -49,13 +50,14 @@ export const ModelCard: React.FC<ModelCardProps> = ({ model, onPointClick }) => 
       </div>
       
       {isExpanded && (
-        <div className="px-4 pb-4 border-t border-slate-100">
+        <div className="px-4 pb-4 border-t border-slate-200">
           <div className="pt-4 space-y-3">
             {model.points.map((point, index) => (
               <PointCard 
                 key={`${point.model}-${point.name}-${index}`}
                 point={point}
                 onPointClick={onPointClick}
+                showModelInfo={false}
               />
             ))}
           </div>
