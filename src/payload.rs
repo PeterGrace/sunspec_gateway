@@ -303,14 +303,10 @@ pub async fn generate_payloads(
                     }
                     match monitored_point.clone().display_name {
                         Some(s) => {
-                            info!("{log_prefix}: {s} should be the display name.");
                             state_payload.label = Some(s.clone());
                             config_payload.name = s;
                         }
-                        None => {
-                            info!("{log_prefix}: we're copying the literal label for name.");
-                            state_payload.label = literal.clone().label
-                        }
+                        None => state_payload.label = literal.clone().label,
                     };
                     state_payload.description = literal.clone().description;
                     state_payload.notes = literal.clone().notes;
