@@ -297,15 +297,30 @@ pub async fn generate_payloads(
 
                 state_payload.value = PayloadValueType::Float(scaled_value);
                 if let Some(literal) = &point_data.unwrap().literal {
+                    // if we have a literal from the model data....
                     if literal.label.is_some() {
                         config_payload.name = literal.label.clone().unwrap();
                     }
                     match monitored_point.clone().display_name {
-                        Some(s) => state_payload.label = Some(s),
-                        None => state_payload.label = literal.clone().label,
+                        Some(s) => {
+                            info!("{log_prefix}: {s} should be the display name.");
+                            state_payload.label = Some(s.clone());
+                            config_payload.name = s;
+                        }
+                        None => {
+                            info!("{log_prefix}: we're copying the literal label for name.");
+                            state_payload.label = literal.clone().label
+                        }
                     };
                     state_payload.description = literal.clone().description;
                     state_payload.notes = literal.clone().notes;
+                } else {
+                    // we don't have literals from the model data, BUT,
+                    // if we specify display_name in the config, we should use that.
+                    if let Some(label) = monitored_point.clone().display_name {
+                        state_payload.label = Some(label.clone());
+                        config_payload.name = label.clone();
+                    }
                 }
             }
             ValueType::Boolean(boolean) => {
