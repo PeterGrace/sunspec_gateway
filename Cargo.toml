@@ -26,7 +26,7 @@ serde_json = "1.0.105"
 serde_yaml = "=0.8.26"
 prometheus = {version = "0.13.3", features=["process"]}
 #sunspec_rs = { path="../sunspec_rs" }
-sunspec_rs = { version = "0.9.7" }
+sunspec_rs = { version = "0.10.3" }
 console-subscriber = "0.1.10"
 chrono = "0.4.28"
 rand = "0.8.5"

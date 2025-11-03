@@ -439,10 +439,12 @@ pub async fn poll_loop(
                         match e {
                             SunSpecPointError::GeneralError(e) => {
                                 error!("{log_prefix}: General error reading point: {e}");
+
                                 continue;
                             }
-                            SunSpecPointError::DoesNotExist(e) => {
-                                error!("{log_prefix}: Point specified does not exist, will remove from future checks: {e}");
+                            SunSpecPointError::DoesNotExist(e)
+                            | SunSpecPointError::PointNotImplemented(e) => {
+                                error!("{log_prefix}: REMOVING FROM FUTURE CHECKS: {e}");
                                 remove_points.push(requested_point_to_check.name.clone());
                                 continue;
                             }
