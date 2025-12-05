@@ -49,7 +49,7 @@
         <symbol id="LIMITING_POWER">8224</symbol>
         <symbol id="LOW_WIND">12288</symbol>
         <symbol id="HIGH_WIND">12304</symbol>
-        <symbol id="LOW_SUN">12544</symbol>
+        <symbol id="LOW_SUN">12546</symbol>
         <symbol id="GROUND_FAULT">16384</symbol>
         <symbol id="INSULATION_FAULT">16400</symbol>
         <symbol id="GROUND_FAULT_LOCKOUT">16416</symbol>
