@@ -21,6 +21,12 @@ pub struct point_history {
 }
 
 #[derive(Default, Debug, Clone, FromRow)]
+pub struct BitfieldHistory {
+    pub uniqueid: String,
+    pub field_name: String,
+}
+
+#[derive(Default, Debug, Clone, FromRow)]
 pub struct AggregatedMeasurements {
     pub min: f64,
     pub max: f64,
@@ -189,6 +195,49 @@ pub async fn check_on(uniqueid: String) -> bool {
             val == r#""on""#
         }
         Err(_e) => false,
+    }
+}
+pub async fn get_bitfield_history(uniqueid: &String) -> Vec<String> {
+    if let Some(pool) = DB_POOL.get() {
+        let values: Vec<String> = match sqlx::query_scalar(
+            r#"
+    SELECT field_name from bitfield_history
+    WHERE uniqueid = $1
+    "#,
+        )
+        .bind(uniqueid)
+        .fetch_all(pool)
+        .await
+        {
+            Ok(v) => v,
+            Err(e) => {
+                warn!("Error fetching bitfield history: {}", e);
+                return vec![];
+            }
+        };
+        values
+    } else {
+        vec![]
+    }
+}
+pub async fn write_bitfield_history(uniqueid: &String, field_name: &String) -> anyhow::Result<()> {
+    if let Some(pool) = DB_POOL.get() {
+        match sqlx::query(
+            r#"
+    INSERT OR IGNORE INTO bitfield_history (uniqueid, field_name)
+    VALUES ($1, $2)
+    "#,
+        )
+        .bind(uniqueid)
+        .bind(field_name)
+        .execute(pool)
+        .await
+        {
+            Ok(_) => Ok(()),
+            Err(e) => Err(anyhow::Error::new(e)),
+        }
+    } else {
+        Err(anyhow::anyhow!("Database pool not initialized"))
     }
 }
 

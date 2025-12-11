@@ -1,7 +1,9 @@
 use crate::config_structs::InputType;
 use crate::consts::*;
 use crate::monitored_point::MonitoredPoint;
-use crate::state_mgmt::{check_needs_adjust, get_history};
+use crate::state_mgmt::{
+    check_needs_adjust, get_bitfield_history, get_history, write_bitfield_history,
+};
 use crate::sunspec_unit::SunSpecUnit;
 use chrono::{DateTime, Utc};
 use num_traits::pow::Pow;
@@ -330,7 +332,57 @@ pub async fn generate_payloads(
 
                 let mut payloads: Vec<CompoundPayload> = vec![];
                 let mut updated_uniques: Vec<String> = vec![];
+
+                let state_obj_id = format!("{sn}.{model}.{point_name}");
+                let mut known_states: Vec<String> = get_bitfield_history(&state_obj_id).await;
+                let mut unreported_states: Vec<String> = known_states
+                    .iter()
+                    .filter(|s| !vec.contains(s))
+                    .cloned()
+                    .collect();
+
+                // if we have unreported states we should default them to "off" if we know about them
+                for state in unreported_states {
+                    // clone preexisiting objects
+                    let mut config_payload = config_payload.clone();
+                    let mut state_payload = state_payload.clone();
+                    // configure this point's state addresses
+                    let config_topic: String;
+                    let state_topic: String;
+                    if let Some(group_address) = monitored_point.this_address {
+                        config_topic = format!(
+                            "homeassistant/binary_sensor/{sn}/{model}_{point_name}_{state}_{group_address}/config"
+                        );
+                        state_topic = format!(
+                            "sunspec_gateway/{sn}/{model}/{group_address}/{point_name}_{state}"
+                        );
+                        config_payload.unique_id =
+                            format!("{sn}.{model}.{point_name}.{state}.{group_address}");
+                    } else {
+                        config_topic = format!(
+                            "homeassistant/binary_sensor/{sn}/{model}_{point_name}_{state}/config"
+                        );
+                        state_topic = format!("sunspec_gateway/{sn}/{model}/{point_name}_{state}");
+                        config_payload.unique_id = format!("{sn}.{model}.{point_name}.{state}");
+                    }
+                    config_payload.entity_id =
+                        format!("binary_sensor.{model}_{point_name}_{state}");
+                    config_payload.name = format!("{model}/{point_name}: {state}");
+                    config_payload.state_topic = state_topic.clone();
+                    config_payload.payload_on = Some(string_on.clone());
+                    config_payload.payload_off = Some(string_off.clone());
+                    state_payload.value = PayloadValueType::String(string_off.clone());
+                    payloads.push(CompoundPayload {
+                        state_topic,
+                        config_topic,
+                        config: config_payload.clone(),
+                        state: state_payload.clone(),
+                    });
+                    updated_uniques.push(config_payload.unique_id.clone());
+                }
+                // now, we set the states reported in this point's response as "on"
                 for state in vec {
+                    let _ = write_bitfield_history(&state_obj_id, state).await;
                     // clone preexisiting objects
                     let mut config_payload = config_payload.clone();
                     let mut state_payload = state_payload.clone();
