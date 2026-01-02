@@ -148,10 +148,14 @@ pub async fn generate_payloads(
     let sn = unit.serial_number.clone();
     let model = monitored_point.model.clone();
     let point_identifier = monitored_point.name.clone().to_string();
-    let point_name = point_identifier
-        .replace("[", "")
-        .replace("]", "")
-        .replace(".", "_");
+    let point_name = if let Some(tn) = monitored_point.topic_name.clone() {
+        tn
+    } else {
+        point_identifier
+            .replace("[", "")
+            .replace("]", "")
+            .replace(".", "_")
+    };
 
     let log_prefix = format!(
         "[{}:{} {sn} {model}/{point_name}]",

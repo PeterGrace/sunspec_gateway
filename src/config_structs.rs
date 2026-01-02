@@ -54,6 +54,7 @@ pub struct PointConfig {
     pub value_min: Option<f64>,
     pub value_max: Option<f64>,
     pub check_deviations: Option<u16>,
+    pub topic_name: Option<String>,
 }
 impl PointConfig {
     pub fn name(&self) -> String {

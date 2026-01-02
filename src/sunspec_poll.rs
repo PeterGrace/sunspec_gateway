@@ -69,21 +69,80 @@ pub async fn poll_loop(
                     error!("There is a defined point in model {id} that has neither point name nor catalog ref.  Skipping.");
                     continue;
                 }
-                let mut monitored_point_target: PointIdentifier = {
-                    if point.catalog_ref.is_some() {
-                        PointIdentifier::Catalog(point.catalog_ref.clone().unwrap())
-                    } else {
-                        PointIdentifier::Point(point.point.clone().unwrap())
-                    }
-                };
+                // Check for range syntax in catalog_ref, e.g. [1..6]
+                let mut expanded_points: Vec<PointConfig> = vec![];
 
-                match MonitoredPoint::new(model.clone(), point.clone(), config.hass_enabled) {
-                    Ok(p) => points.push(p),
-                    Err(e) => {
-                        warn!(%sn, "unable to create MonitoredPoint for {id}/{}: {e}", monitored_point_target);
-                        continue;
+                if let Some(ref cat_ref) = point.catalog_ref {
+                    if let (Some(start_bracket), Some(dots), Some(end_bracket)) = (
+                        cat_ref.find('['),
+                        cat_ref.find(".."),
+                        cat_ref.find(']'),
+                    ) {
+                        if start_bracket < dots && dots < end_bracket {
+                            let start_str = &cat_ref[start_bracket + 1..dots];
+                            let end_str = &cat_ref[dots + 2..end_bracket];
+                            
+                            if let (Ok(start_idx), Ok(end_idx)) = (start_str.parse::<u16>(), end_str.parse::<u16>()) {
+                                debug!("Expanding point range {} to {}", start_idx, end_idx);
+                                for i in start_idx..=end_idx {
+                                    let mut new_point = point.clone();
+                                    // Replace [x..y] with [i]
+                                    let new_cat_ref = format!(
+                                        "{}[{}]{}",
+                                        &cat_ref[..start_bracket],
+                                        i,
+                                        &cat_ref[end_bracket + 1..]
+                                    );
+                                    new_point.catalog_ref = Some(new_cat_ref);
+
+                                    // Replace {index} or {i} in display_name
+                                    if let Some(ref dn) = new_point.display_name {
+                                        new_point.display_name = Some(
+                                            dn.replace("{index}", &i.to_string())
+                                              .replace("{i}", &i.to_string())
+                                        );
+                                    }
+                                    
+                                    // Replace {index} or {i} in topic_name
+                                    if let Some(ref tn) = new_point.topic_name {
+                                        new_point.topic_name = Some(
+                                            tn.replace("{index}", &i.to_string())
+                                              .replace("{i}", &i.to_string())
+                                        );
+                                    }
+                                    
+                                    expanded_points.push(new_point);
+                                }
+                            } else {
+                                expanded_points.push(point.clone());
+                            }
+                        } else {
+                            expanded_points.push(point.clone());
+                        }
+                    } else {
+                        expanded_points.push(point.clone());
                     }
-                };
+                } else {
+                    expanded_points.push(point.clone());
+                }
+
+                for p_config in expanded_points {
+                    let mut monitored_point_target: PointIdentifier = {
+                        if p_config.catalog_ref.is_some() {
+                            PointIdentifier::Catalog(p_config.catalog_ref.clone().unwrap())
+                        } else {
+                            PointIdentifier::Point(p_config.point.clone().unwrap())
+                        }
+                    };
+
+                    match MonitoredPoint::new(model.clone(), p_config, config.hass_enabled) {
+                        Ok(p) => points.push(p),
+                        Err(e) => {
+                            warn!(%sn, "unable to create MonitoredPoint for {id}/{}: {e}", monitored_point_target);
+                            continue;
+                        }
+                    };
+                }
             }
         }
     } // at this point, `points` should contain all points we've been asked to check.

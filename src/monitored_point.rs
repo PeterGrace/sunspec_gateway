@@ -39,6 +39,7 @@ pub struct MonitoredPoint {
     /// how many standard deviations we'll allow before considering value nonsensical
     pub check_deviations: Option<u16>,
     pub this_address: Option<u16>,
+    pub topic_name: Option<String>,
 }
 
 impl MonitoredPoint {
@@ -102,6 +103,7 @@ impl MonitoredPoint {
             value_max: pc.value_max,
             check_deviations: pc.check_deviations,
             this_address: None,
+            topic_name: pc.topic_name,
         })
     }
 }
