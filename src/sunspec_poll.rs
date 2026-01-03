@@ -1,6 +1,7 @@
 use crate::config_structs::{InputType, PointConfig};
 use crate::consts::*;
 use crate::ipc::{IPCMessage, PublishMessage};
+use crate::modules::dashboard::store_live_value;
 use crate::monitored_point::MonitoredPoint;
 use crate::payload::generate_payloads;
 use crate::payload::Payload;
@@ -42,11 +43,16 @@ impl Drop for PollLoopGuard {
     }
 }
 
+use std::sync::Arc;
+use tokio::sync::RwLock;
+use crate::modules::status_structs::{SystemStatus, DeviceStatus};
+
 #[instrument(skip_all)]
 pub async fn poll_loop(
     unit: &SunSpecUnit,
     tx: Sender<IPCMessage>,
     mut broadcast_rx: Receiver<IPCMessage>,
+    status: Arc<RwLock<SystemStatus>>,
 ) -> Result<(), GatewayError> {
     let genesis_moment = Utc::now();
     let sn = &unit.serial_number;
@@ -69,10 +75,89 @@ pub async fn poll_loop(
                     error!("There is a defined point in model {id} that has neither point name nor catalog ref.  Skipping.");
                     continue;
                 }
+                
                 // Check for range syntax in catalog_ref, e.g. [1..6]
                 let mut expanded_points: Vec<PointConfig> = vec![];
 
-                if let Some(ref cat_ref) = point.catalog_ref {
+                // ====== AUTO-DISCOVERY FOR MODEL 804 BATTERY MODULES ======
+                // If this is Model 804 with a simple `point` (not catalog_ref) that matches
+                // a known module-level point, auto-expand it for all discovered modules.
+                let model_804_module_points = vec![
+                    "ModNCell", "ModSoC", "ModSoH", "ModCellVMax", "ModCellVMaxCell",
+                    "ModCellVMin", "ModCellVMinCell", "ModCellVAvg", "ModCellTmpMax",
+                    "ModCellTmpMaxCell", "ModCellTmpMin", "ModCellTmpMinCell", "ModCellTmpAvg"
+                ];
+                
+                let is_model_804 = model == "804" || *id == 804;
+                let is_module_point = point.point.as_ref()
+                    .map(|p| model_804_module_points.iter().any(|mp| p == *mp))
+                    .unwrap_or(false);
+                
+                if is_model_804 && is_module_point && point.catalog_ref.is_none() {
+                    // Auto-discover NMod and expand
+                    let point_name = point.point.as_ref().unwrap().clone();
+                    
+                    // Try to get NMod from the device
+                    if let Some(model_data) = unit.conn.models.get(&804) {
+                        if let Ok(nmod_point) = unit.conn.clone()
+                            .get_point(model_data.clone(), PointIdentifier::Point("NMod".to_string()))
+                            .await
+                        {
+                            if let Some(ValueType::Integer(nmod_val)) = nmod_point.value {
+                                let nmod = nmod_val as u16;
+                                if nmod > 0 && nmod <= 20 {
+                                    debug!("Auto-discovered {} battery modules for Model 804", nmod);
+                                    for i in 1..=nmod {
+                                        let mut new_point = point.clone();
+                                        // Generate catalog_ref for this module
+                                        let cat_ref = format!(
+                                            ".lithium_ion_string.lithium_ion_string_module[{}].{}",
+                                            i, point_name
+                                        );
+                                        new_point.catalog_ref = Some(cat_ref);
+                                        new_point.point = None; // Clear simple point as we're using catalog
+                                        
+                                        // Auto-generate display_name if not set
+                                        if new_point.display_name.is_none() {
+                                            new_point.display_name = Some(format!("Module {} {}", i, point_name));
+                                        } else if let Some(ref dn) = new_point.display_name {
+                                            new_point.display_name = Some(
+                                                dn.replace("{index}", &i.to_string())
+                                                  .replace("{i}", &i.to_string())
+                                            );
+                                        }
+                                        
+                                        // Auto-generate topic_name for MQTT
+                                        if new_point.topic_name.is_none() {
+                                            new_point.topic_name = Some(format!("mod{}_{}", i, point_name));
+                                        } else if let Some(ref tn) = new_point.topic_name {
+                                            new_point.topic_name = Some(
+                                                tn.replace("{index}", &i.to_string())
+                                                  .replace("{i}", &i.to_string())
+                                            );
+                                        }
+                                        
+                                        expanded_points.push(new_point);
+                                    }
+                                } else {
+                                    warn!("NMod value {} out of range, skipping auto-expand for {}", nmod, point_name);
+                                    expanded_points.push(point.clone());
+                                }
+                            } else {
+                                debug!("NMod not available, falling back to normal processing for {}", point_name);
+                                expanded_points.push(point.clone());
+                            }
+                        } else {
+                            debug!("Couldn't get NMod point, falling back for {}", point_name);
+                            expanded_points.push(point.clone());
+                        }
+                    } else {
+                        expanded_points.push(point.clone());
+                    }
+                }
+                // ====== END AUTO-DISCOVERY ======
+                else if let Some(ref cat_ref) = point.catalog_ref {
+                    // Existing range expansion logic for catalog_ref [1..6]
                     if let (Some(start_bracket), Some(dots), Some(end_bracket)) = (
                         cat_ref.find('['),
                         cat_ref.find(".."),
@@ -523,6 +608,23 @@ pub async fn poll_loop(
                                 let _ = sleep(Duration::from_millis(MQTT_PROCESSING_PAD_MILLIS))
                                     .instrument(span!(Level::INFO, "sleep"))
                                     .await;
+                                
+                                {
+                                    let mut s = status.write().await;
+                                    let name = format!("{}:{}", unit.addr, unit.slave_id);
+                                    if let Some(dev) = s.devices.iter_mut().find(|d| d.name == name) {
+                                        dev.connected = false;
+                                        dev.last_error = Some(e.to_string());
+                                    } else {
+                                        s.devices.push(DeviceStatus {
+                                            name,
+                                            connected: false,
+                                            last_seen: Utc::now().timestamp(),
+                                            last_error: Some(e.to_string()),
+                                        });
+                                    }
+                                }
+
                                 return Err(GatewayError::CommunicationError(e.to_string()));
                             }
                         }
@@ -572,12 +674,36 @@ pub async fn poll_loop(
                                         "{log_prefix}: Couldn't cull history for this point: {e}"
                                     );
                                 };
-                                if let Err(e) = write_payload_history(payload.config, payload.state)
+                                if let Err(e) = write_payload_history(payload.config.clone(), payload.state.clone())
                                     .instrument(span!(Level::INFO, "write_payload_history"))
                                     .await
                                 {
                                     warn!("{log_prefix}: Unable to store value in db: {e}");
                                 }
+                                
+                                // Store live value for dashboard
+                                // Use topic_name if available (cleaner names like mod1_ModSoH),
+                                // otherwise extract base point name from catalog_ref, or use point name directly
+                                let model_id: u16 = model.parse().unwrap_or(0);
+                                let dashboard_point_name = if let Some(ref tn) = requested_point_to_check.topic_name {
+                                    tn.clone()
+                                } else {
+                                    // For catalog refs, extract a cleaner name
+                                    match &requested_point_to_check.name {
+                                        PointIdentifier::Catalog(cat) => {
+                                            // Extract last segment after final dot, e.g., ".foo.bar.ModSoH" -> "ModSoH"
+                                            cat.rsplit('.').next().unwrap_or(cat).to_string()
+                                        }
+                                        PointIdentifier::Point(p) => p.clone(),
+                                    }
+                                };
+                                store_live_value(
+                                    sn.clone(),
+                                    model_id,
+                                    unit.device_info.model.clone(),
+                                    dashboard_point_name,
+                                    payload.state.value.clone(),
+                                ).await;
                             }
                         }
                     },
@@ -596,6 +722,24 @@ pub async fn poll_loop(
         }
 
         debug!(%addr, %sn, "Device tick");
+
+        // Update status
+        {
+            let mut s = status.write().await;
+            if let Some(dev) = s.devices.iter_mut().find(|d| d.name == format!("{}:{}", unit.addr, unit.slave_id)) {
+                dev.connected = true;
+                dev.last_seen = Utc::now().timestamp();
+                dev.last_error = None;
+            } else {
+                s.devices.push(DeviceStatus {
+                    name: format!("{}:{}", unit.addr, unit.slave_id),
+                    connected: true,
+                    last_seen: Utc::now().timestamp(),
+                    last_error: None,
+                });
+            }
+        }
+
         let _ = sleep(Duration::from_secs(MINIMUM_QUERY_INTERVAL_SECS.into()))
             .instrument(span!(Level::INFO, "main-loop-sleep"))
             .await;

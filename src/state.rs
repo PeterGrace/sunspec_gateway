@@ -6,10 +6,13 @@ use cached::UnboundCache;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+use crate::modules::status_structs::SystemStatus;
+
 #[derive(Clone)]
 pub(crate) struct AppState {
     // we use the static ref DB_POOL for the sqlitepool object
     //pub(crate) pool: Option<SqlitePool>,
     pub(crate) jwks_cache: JwksCache,
     pub(crate) user_cache: Option<Arc<RwLock<UnboundCache<String, User>>>>,
+    pub(crate) status: Arc<RwLock<SystemStatus>>,
 }

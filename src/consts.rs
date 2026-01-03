@@ -1,7 +1,7 @@
 pub const APP_NAME: &str = "sunspec_gateway";
 pub const MPSC_BUFFER_SIZE: usize = 1024_usize;
 pub const MINIMUM_QUERY_INTERVAL_SECS: u16 = 5_u16;
-pub const CULL_HISTORY_ROWS: u8 = 200_u8;
+pub const CULL_HISTORY_ROWS: u32 = 200_000_u32;
 
 // SUNSPEC_DEVICE_CONNECT_TIMEOUT was historically 5 seconds, but I upped it to 10 when we needed to
 // add parsing for json models, which requires full model reads.
@@ -33,3 +33,6 @@ pub const HEALTH_PATH: &str = "/api/health";
 
 pub const POINTS_TAG: &str = "points";
 pub const POINTS_TAG_DESCRIPTION: &str = "Points";
+
+pub const DASHBOARD_TAG: &str = "dashboard";
+pub const DASHBOARD_TAG_DESCRIPTION: &str = "Dashboard API for real-time device monitoring";

@@ -21,7 +21,7 @@ pub struct DeviceInfo {
     pub sw_version: String,
 }
 
-#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+#[derive(Deserialize, Serialize, Debug, Default, Clone, utoipa::ToSchema)]
 #[serde(untagged)]
 pub enum PayloadValueType {
     Float(f64),
