@@ -9,8 +9,12 @@ use sqlx::SqlitePool;
 use std::error::Error;
 use utoipa::ToSchema;
 
+pub(crate) mod controls;
+pub(crate) mod dashboard;
 pub(crate) mod points;
+pub mod settings;
 pub mod users;
+pub mod status_structs;
 
 #[derive(PartialEq)]
 pub enum AuthorizableType {
