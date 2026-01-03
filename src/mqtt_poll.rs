@@ -12,15 +12,20 @@ use tokio::sync::mpsc;
 use tokio::sync::mpsc::error::TryRecvError;
 use tokio::time::{sleep, timeout};
 
+use std::sync::Arc;
+use tokio::sync::RwLock;
+use crate::modules::status_structs::SystemStatus;
+
 pub async fn mqtt_poll_loop(
     mqtt: MqttConnection,
     mut incoming_rx: tokio::sync::mpsc::Receiver<IPCMessage>,
     mut bcast_rx: tokio::sync::broadcast::Receiver<IPCMessage>,
     outgoing_tx: mpsc::Sender<IPCMessage>,
+    status: Arc<RwLock<SystemStatus>>,
 ) -> Result<(), GatewayError> {
-    let task = tokio::task::Builder::new()
-        .name("mqtt_poll_loop")
-        .spawn(async move {
+    let status_clone = status.clone();
+    let task = tokio::spawn(async move {
+            let status = status_clone; // use local clone
             let mut conn = mqtt.event_loop;
             let mut dlq: Vec<u16> = vec![];
             loop {
@@ -38,10 +43,15 @@ pub async fn mqtt_poll_loop(
                             Incoming::Disconnect => {
                                 // we should do something here.
                                 error!("mqtt disconnect packet received.");
+                                let mut s = status.write().await;
+                                s.mqtt_connected = false;
                                 return;
                             }
                             Incoming::ConnAck(_ca) => {
                                 info!("MQTT connection established.");
+                                let mut s = status.write().await;
+                                s.mqtt_connected = true;
+                                s.mqtt_last_error = None;
                             }
                             Incoming::PubAck(pa) => {
                                 dlq.retain(|x| *x != pa.pkid);
@@ -90,8 +100,7 @@ pub async fn mqtt_poll_loop(
                     trace!("DLQ is {}", dlq.len());
                 }
             }
-        })
-        .unwrap();
+        });
 
     let mut outbound: VecDeque<PublishMessage> = VecDeque::new();
     loop {

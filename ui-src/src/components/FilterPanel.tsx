@@ -12,10 +12,10 @@ interface FilterPanelProps {
   data: UnitList | null;
 }
 
-export const FilterPanel: React.FC<FilterPanelProps> = ({ 
-  isOpen, 
-  onToggle, 
-  filters, 
+export const FilterPanel: React.FC<FilterPanelProps> = ({
+  isOpen,
+  onToggle,
+  filters,
   onFilterChange,
   data
 }) => {
@@ -30,9 +30,9 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
   // Extract unique models from the data
   const availableModels = React.useMemo(() => {
     if (!data) return [];
-    
+
     const modelsMap = new Map<number, { id: number; name: string }>();
-    
+
     data.units.forEach(unit => {
       unit.models.forEach(model => {
         if (!modelsMap.has(model.model)) {
@@ -43,7 +43,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
         }
       });
     });
-    
+
     return Array.from(modelsMap.values()).sort((a, b) => a.id - b.id);
   }, [data]);
 
@@ -56,11 +56,10 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
       <div className="relative">
         <button
           onClick={onToggle}
-          className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors duration-200 ${
-            hasActiveFilters 
-              ? 'bg-blue-100 border border-blue-200 text-blue-700 hover:bg-blue-200' 
-              : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
-          }`}
+          className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors duration-200 ${hasActiveFilters
+            ? 'bg-blue-100 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-900/50'
+            : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
+            }`}
         >
           <Filter className={`w-4 h-4 ${hasActiveFilters ? 'text-blue-600' : 'text-slate-500'}`} />
           <span className="text-sm">Filters</span>
@@ -78,54 +77,53 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
   }
 
   return (
-    <div className="absolute right-0 top-12 bg-white border border-slate-200 rounded-lg p-4 shadow-lg z-10 min-w-64">
+    <div className="absolute right-0 top-12 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-4 shadow-lg dark:shadow-black/30 z-10 min-w-64 transition-all duration-200">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center space-x-2">
-          <h3 className="font-semibold text-slate-800">Filters</h3>
+          <h3 className="font-semibold text-slate-800 dark:text-white">Filters</h3>
           {hasActiveFilters && (
-            <span className="text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded-full font-medium">
+            <span className="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-2 py-1 rounded-full font-medium">
               {activeFilterCount} active
             </span>
           )}
         </div>
         <button
           onClick={onToggle}
-          className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors duration-200 flex items-center justify-center"
+          className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors duration-200 flex items-center justify-center"
         >
-          <X className="w-4 h-4 text-slate-500 hover:text-slate-700" />
+          <X className="w-4 h-4 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200" />
         </button>
       </div>
-      
+
       <div className="space-y-4">
         {hasActiveFilters && (
-          <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg border border-blue-200">
+          <div className="flex items-center justify-between p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
             <div className="flex items-center space-x-2">
-              <CheckCircle className="w-4 h-4 text-blue-600" />
-              <span className="text-sm text-blue-700 font-medium">Filters Applied</span>
+              <CheckCircle className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+              <span className="text-sm text-blue-700 dark:text-blue-300 font-medium">Filters Applied</span>
             </div>
             <button
               onClick={() => {
                 onFilterChange('model', '');
               }}
-              className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+              className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 font-medium"
             >
               Clear All
             </button>
           </div>
         )}
-        
+
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-2">
+          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
             Model Type
           </label>
           <select
             value={filters.model}
             onChange={(e) => handleFilterChange('model', e.target.value)}
-            className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-              filters.model !== '' 
-                ? 'border-blue-300 bg-blue-50' 
-                : 'border-slate-200'
-            }`}
+            className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-slate-900 dark:text-white transition-colors duration-200 ${filters.model !== ''
+              ? 'border-blue-300 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-700'
+              : 'border-slate-200 dark:border-slate-700'
+              }`}
           >
             <option value="">All Models</option>
             {availableModels.map(model => (

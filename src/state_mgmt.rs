@@ -1,4 +1,5 @@
 use crate::payload::{HAConfigPayload, StatePayload};
+use crate::config_structs::GatewayConfig;
 use anyhow::{bail, Result};
 use lazy_static::lazy_static;
 
@@ -39,7 +40,7 @@ pub struct AggregatedMeasurements {
 //const DB_URL: &str = "sqlite://sunspec_gateway.db";
 
 lazy_static! {
-    static ref DB_POOL: OnceCell<Pool<Sqlite>> = OnceCell::new();
+    pub static ref DB_POOL: OnceCell<Pool<Sqlite>> = OnceCell::new();
     static ref DB_URL: OnceCell<String> = OnceCell::new();
 }
 pub async fn acquire_db() -> PoolConnection<Sqlite> {
@@ -92,7 +93,7 @@ pub async fn prepare_to_database() -> anyhow::Result<()> {
     Ok(())
 }
 
-pub async fn cull_records_to(uniqueid: String, cull_num: u8) -> anyhow::Result<()> {
+pub async fn cull_records_to(uniqueid: String, cull_num: u32) -> anyhow::Result<()> {
     let pool = DB_POOL.get().unwrap();
     match sqlx::query(
         r#"
@@ -318,4 +319,45 @@ pub async fn get_history(uniqueid: String) -> anyhow::Result<AggregatedMeasureme
     };
 
     Ok(values)
+}
+
+pub async fn save_config(config: &GatewayConfig) -> anyhow::Result<()> {
+    // We store the whole config as a JSON blob under the key "gateway_config"
+    let json_val = serde_json::to_string(config)?;
+    let pool = DB_POOL.get().unwrap();
+    sqlx::query(
+        r#"
+        INSERT INTO settings (key, value)
+        VALUES ($1, $2)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value
+        "#,
+    )
+    .bind("gateway_config")
+    .bind(json_val)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn load_config() -> anyhow::Result<Option<GatewayConfig>> {
+    // If DB isn't initialized yet, return None
+    let pool = match DB_POOL.get() {
+        Some(p) => p,
+        None => return Ok(None),
+    };
+
+    let row: Option<(String,)> = sqlx::query_as(
+        "SELECT value FROM settings WHERE key = 'gateway_config'"
+    )
+    .fetch_optional(pool)
+    .await
+    .unwrap_or(None);
+
+    match row {
+        Some((val,)) => {
+            let config: GatewayConfig = serde_json::from_str(&val)?;
+            Ok(Some(config))
+        },
+        None => Ok(None),
+    }
 }

@@ -1,16 +1,15 @@
+use crate::{GatewayError, MODEL_HASH};
+// use anyhow::bail;
+// use std::collections::HashMap;
+// use std::time::Duration;
 use crate::consts::*;
 use crate::monitored_point::MonitoredPoint;
 use crate::payload::DeviceInfo;
-use crate::{GatewayError, MODEL_HASH, SHUTDOWN};
-use anyhow::bail;
-
-use std::time::Duration;
-
 use sunspec_rs::sunspec_connection::{SunSpecConnection, TlsConfig};
 use sunspec_rs::sunspec_data::SunSpecData;
 use sunspec_rs::sunspec_models::{PointIdentifier, ValueType};
-use tokio::task;
-use tokio::time::sleep;
+// use tokio::task;
+// use tokio::time::sleep;
 
 #[derive(Clone, Debug)]
 pub struct SunSpecUnit {
