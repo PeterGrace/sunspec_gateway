@@ -13,8 +13,8 @@ pub(crate) mod controls;
 pub(crate) mod dashboard;
 pub(crate) mod points;
 pub mod settings;
-pub mod users;
 pub mod status_structs;
+pub mod users;
 
 #[derive(PartialEq)]
 pub enum AuthorizableType {

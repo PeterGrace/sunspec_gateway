@@ -31,7 +31,7 @@ YOU ARE A RABID DOCUMENTARIAN.  You will create markdown docs for every new iter
 - When reporting errors to the console, use `tracing::error!` or `log::error!` instead of `println!`.
 - If designing applications with a web-based front end interface, e.g. compiling to WASM or using `dioxus`:
   - All deep computation **MUST** occur within Rust processes (i.e. the WASM binary or the `dioxus` app Rust process). **NEVER** use JavaScript for deep computation.
-  - The front-end **MUST** use Pico CSS and vanilla JavaScript. **NEVER** use jQuery or any component-based frameworks such as React.
+  - Use Pico CSS and vanilla JavaScript for simple UIs. For dashboards with multiple pages, shared live state, or significant data visualization, React with Tailwind is acceptable. Deep computation must still occur in Rust.
   - The front-end should prioritize speed and common HID guidelines.
   - The app should use adaptive light/dark themes by default, with a toggle to switch the themes.
   - The typography/theming of the application **MUST** be modern and unique, similar to that of popular single-page web/mobile. **ALWAYS** add an appropriate font for headers and body text. You may reference fonts from Google Fonts.

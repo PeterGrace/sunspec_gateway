@@ -1,5 +1,4 @@
 use crate::consts::*;
-use tracing::{info, warn, error};
 use crate::modules::AppAPIResponse;
 use crate::payload::PayloadValueType;
 use crate::state::AppState;
@@ -8,20 +7,21 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::Json;
-use chrono::{DateTime, Utc, Datelike};
+use chrono::{DateTime, Datelike, Utc};
 use futures::stream::{self, Stream};
+use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
+use sqlx::Row;
 use std::collections::HashMap;
 use std::convert::Infallible;
 use std::time::Duration;
+use tokio::sync::RwLock;
 use tokio_stream::StreamExt;
 use tower_sessions::Session;
+use tracing::{error, info, warn};
 use utoipa::ToSchema;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
-use sqlx::Row;
-use tokio::sync::RwLock;
-use lazy_static::lazy_static;
 
 lazy_static! {
     static ref DAILY_BASELINES: RwLock<HashMap<String, f64>> = RwLock::new(HashMap::new());
@@ -35,7 +35,7 @@ lazy_static! {
 #[serde(rename_all = "lowercase")]
 pub enum DeviceType {
     Inverter,
-    PVLink,  // Combined PV Links and String Combiners
+    PVLink, // Combined PV Links and String Combiners
     Battery,
     Unknown,
 }
@@ -123,7 +123,7 @@ pub struct DashboardMetrics {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default)]
 pub struct DashboardDevices {
     pub inverters: Vec<DeviceData>,
-    pub pv_links: Vec<DeviceData>,  // Combined PV Links and String Combiners
+    pub pv_links: Vec<DeviceData>, // Combined PV Links and String Combiners
     pub batteries: Vec<DeviceData>,
 }
 
@@ -304,10 +304,11 @@ pub async fn get_dashboard_metrics(
     _session: Session,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<Json<DashboardMetrics>, (StatusCode, AppAPIResponse)> {
-    let tz_offset: i32 = params.get("timezone_offset")
+    let tz_offset: i32 = params
+        .get("timezone_offset")
         .and_then(|s| s.parse().ok())
         .unwrap_or(0);
-        
+
     let metrics = build_dashboard_metrics(tz_offset).await;
     Ok(Json(metrics))
 }
@@ -351,11 +352,15 @@ pub async fn get_dashboard_history(
     _session: Session,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<Json<HistoryResponse>, (StatusCode, AppAPIResponse)> {
-    let period = params.get("period").cloned().unwrap_or_else(|| "today".to_string());
-    let tz_offset: i32 = params.get("timezone_offset")
+    let period = params
+        .get("period")
+        .cloned()
+        .unwrap_or_else(|| "today".to_string());
+    let tz_offset: i32 = params
+        .get("timezone_offset")
         .and_then(|s| s.parse().ok())
         .unwrap_or(0);
-        
+
     let history = build_history_data(&period, tz_offset).await;
     Ok(Json(history))
 }
@@ -392,25 +397,25 @@ async fn build_dashboard_devices() -> DashboardDevices {
 
     let values = LIVE_VALUES.read().await;
     let mut devices = DashboardDevices::default();
-    
+
     // Group values by serial number
     let mut device_map: HashMap<String, DeviceData> = HashMap::new();
-    
+
     for (key, value) in values.iter() {
         let serial = &value.serial_number;
         let new_device_type = classify_device_type(value.model_id, &value.model_name);
-        
-        let device = device_map.entry(serial.clone()).or_insert_with(|| {
-            DeviceData {
+
+        let device = device_map
+            .entry(serial.clone())
+            .or_insert_with(|| DeviceData {
                 serial_number: serial.clone(),
                 model_id: value.model_id,
                 model_name: value.model_name.clone(),
                 device_type: new_device_type.clone(),
                 last_updated: value.last_updated,
                 ..Default::default()
-            }
-        });
-        
+            });
+
         // If the current device type is Unknown but we found a known type, upgrade it
         // This handles the case where we see an Unknown model first (e.g., REbus status)
         // but later see a known model (e.g., inverter model 102) for the same serial
@@ -419,16 +424,22 @@ async fn build_dashboard_devices() -> DashboardDevices {
             device.model_id = value.model_id;
             device.model_name = value.model_name.clone();
         }
-        
+
         // Update last seen timestamp
         if value.last_updated > device.last_updated {
             device.last_updated = value.last_updated;
         }
-        
+
         // Map point values to device fields
-        update_device_field(device, &value.point_name, &value.value, value.model_id, &baselines);
+        update_device_field(
+            device,
+            &value.point_name,
+            &value.value,
+            value.model_id,
+            &baselines,
+        );
     }
-    
+
     // Sort devices into categories
     for (_, device) in device_map {
         match device.device_type {
@@ -438,12 +449,18 @@ async fn build_dashboard_devices() -> DashboardDevices {
             DeviceType::Unknown => {} // Skip unknown devices
         }
     }
-    
+
     // Sort by serial number for consistent ordering
-    devices.inverters.sort_by(|a, b| a.serial_number.cmp(&b.serial_number));
-    devices.pv_links.sort_by(|a, b| a.serial_number.cmp(&b.serial_number));
-    devices.batteries.sort_by(|a, b| a.serial_number.cmp(&b.serial_number));
-    
+    devices
+        .inverters
+        .sort_by(|a, b| a.serial_number.cmp(&b.serial_number));
+    devices
+        .pv_links
+        .sort_by(|a, b| a.serial_number.cmp(&b.serial_number));
+    devices
+        .batteries
+        .sort_by(|a, b| a.serial_number.cmp(&b.serial_number));
+
     devices
 }
 
@@ -453,7 +470,7 @@ fn classify_device_type(model_id: u16, model_name: &str) -> DeviceType {
     if model_name.to_lowercase().contains("rebus") || model_name.to_lowercase().contains("beacon") {
         return DeviceType::Unknown;
     }
-    
+
     match model_id {
         // Inverter models (split phase, 3-phase, etc.)
         101..=103 | 111..=113 => DeviceType::Inverter,
@@ -496,42 +513,48 @@ async fn build_all_devices_data() -> AllDevicesData {
     // Grouping: Serial -> ModelID -> FullModelData
     for value in values.values() {
         let serial_map = devices_map.entry(value.serial_number.clone()).or_default();
-        let model_entry = serial_map.entry(value.model_id).or_insert_with(|| FullModelData {
-            model_id: value.model_id,
-            model_name: value.model_name.clone(),
-            points: HashMap::new(),
-        });
-        
-        model_entry.points.insert(value.point_name.clone(), value.value.clone());
+        let model_entry = serial_map
+            .entry(value.model_id)
+            .or_insert_with(|| FullModelData {
+                model_id: value.model_id,
+                model_name: value.model_name.clone(),
+                points: HashMap::new(),
+            });
+
+        model_entry
+            .points
+            .insert(value.point_name.clone(), value.value.clone());
     }
 
     // Convert map to vec structure
     let mut all_devices = AllDevicesData::default();
-    
+
     for (serial, models_map) in devices_map {
         let mut models: Vec<FullModelData> = models_map.into_values().collect();
         // Sort models by ID for consistent display
         models.sort_by_key(|m| m.model_id);
-        
+
         all_devices.devices.push(FullDeviceData {
             serial_number: serial,
             models,
         });
     }
-    
+
     // Sort devices by serial
-    all_devices.devices.sort_by(|a, b| a.serial_number.cmp(&b.serial_number));
+    all_devices
+        .devices
+        .sort_by(|a, b| a.serial_number.cmp(&b.serial_number));
 
     all_devices
 }
 
 /// Update device fields based on point name and value
 fn update_device_field(
-    device: &mut DeviceData, 
-    point_name: &str, 
+    device: &mut DeviceData,
+    point_name: &str,
     value: &PayloadValueType,
     model_id: u16,
-    baselines: &HashMap<String, f64>
+    baselines: &HashMap<String, f64>,
 ) {
     match point_name.to_lowercase().as_str() {
         // Power points
@@ -563,18 +586,18 @@ fn update_device_field(
             if let Some(v) = extract_f64(value) {
                 // Convert Wh to kWh
                 device.lifetime_energy = Some(v / 1000.0);
-                
+
                 // Calculate Energy Today
                 // Construct unique ID: serial.model.point
                 // Point name here is matched case-insensitive, but DB uses exact case from config.
                 // We assume `point_name` passed in is correct case (it comes from LIVE_VALUES which comes from config).
-                // Wait, `values.iter()` provides `point_name` from the Key? 
+                // Wait, `values.iter()` provides `point_name` from the Key?
                 // `Key` in `LIVE_VALUES` is `unique_id` normally? Or constructed?
                 // `LIVE_VALUES` keys... let's check input.
                 // `for (key, value) in values.iter()`
                 // `value` has `point_name`. Ideally matches config case.
                 let unique_id = format!("{}.{}.{}", device.serial_number, model_id, point_name);
-                
+
                 if let Some(baseline) = baselines.get(&unique_id) {
                     let today = v - baseline;
                     if today >= 0.0 {
@@ -647,15 +670,15 @@ async fn build_dashboard_metrics(tz_offset: i32) -> DashboardMetrics {
     // Aggregators
     let mut solar_today = 0.0;
     let mut solar_yesterday = 0.0;
-    
+
     let mut grid_import_today = 0.0;
     let mut grid_export_today = 0.0;
     let mut grid_import_month = 0.0;
     let mut grid_export_month = 0.0;
-    
+
     let mut battery_charge_today = 0.0;
     let mut battery_discharge_today = 0.0;
-    
+
     // We assume Consumption = Solar + Import - Export + Discharge - Charge.
     // But Consumption is also "Load".
     // Let's calc components first.
@@ -673,16 +696,18 @@ async fn build_dashboard_metrics(tz_offset: i32) -> DashboardMetrics {
             }
             0.0 // Fallback or reset
         };
-        
+
         // Helper specifically for Yesterday: (TodayBase - YesterdayBase)
         // This is fixed for the whole day.
         let get_yesterday_delta = || -> f64 {
-             let today_base = daily_baselines.get(unique_id);
-             let yest_base = yesterday_baselines.get(unique_id);
-             if let (Some(t), Some(y)) = (today_base, yest_base) {
-                 if t >= y { return t - y; }
-             }
-             0.0
+            let today_base = daily_baselines.get(unique_id);
+            let yest_base = yesterday_baselines.get(unique_id);
+            if let (Some(t), Some(y)) = (today_base, yest_base) {
+                if t >= y {
+                    return t - y;
+                }
+            }
+            0.0
         };
 
         if let Some(current_val) = extract_f64(&value.value) {
@@ -694,7 +719,7 @@ async fn build_dashboard_metrics(tz_offset: i32) -> DashboardMetrics {
                     solar_today += get_delta(&daily_baselines, current_val);
                     solar_yesterday += get_yesterday_delta();
                 }
-                
+
                 // Battery Energy (WhIn / WhOut)
                 (DeviceType::Battery, "whin") => {
                     battery_charge_today += get_delta(&daily_baselines, current_val);
@@ -702,40 +727,46 @@ async fn build_dashboard_metrics(tz_offset: i32) -> DashboardMetrics {
                 (DeviceType::Battery, "whout") => {
                     battery_discharge_today += get_delta(&daily_baselines, current_val);
                 }
-                
+
                 // Grid Energy (Rebus 64204: WhIn=Export, WhOut=Import based on observation)
                 // Use generic check for Grid device or Model 64204
-                (_, "whin") if point.contains("whin") && (value.model_id == 64204 || value.model_id == 10) => {
-                     // 64204 is Rebus Grid. User observation suggests WhIn is Export (Leaving site).
-                     grid_export_today += get_delta(&daily_baselines, current_val);
-                     grid_export_month += get_delta(&monthly_baselines, current_val);
+                (_, "whin")
+                    if point.contains("whin")
+                        && (value.model_id == 64204 || value.model_id == 10) =>
+                {
+                    // 64204 is Rebus Grid. User observation suggests WhIn is Export (Leaving site).
+                    grid_export_today += get_delta(&daily_baselines, current_val);
+                    grid_export_month += get_delta(&monthly_baselines, current_val);
                 }
-                (_, "whout") if point.contains("whout") && (value.model_id == 64204 || value.model_id == 10) => {
-                     // WhOut is Import (Entering site)
-                     grid_import_today += get_delta(&daily_baselines, current_val);
-                     grid_import_month += get_delta(&monthly_baselines, current_val);
+                (_, "whout")
+                    if point.contains("whout")
+                        && (value.model_id == 64204 || value.model_id == 10) =>
+                {
+                    // WhOut is Import (Entering site)
+                    grid_import_today += get_delta(&daily_baselines, current_val);
+                    grid_import_month += get_delta(&monthly_baselines, current_val);
                 }
                 _ => {}
             }
         }
     }
-    
+
     // Scale to kWh (Live values usually Wh)
     metrics.yield_today = solar_today / 1000.0;
     metrics.yield_yesterday = solar_yesterday / 1000.0;
-    
+
     metrics.battery_in_today = battery_charge_today / 1000.0;
     metrics.battery_out_today = battery_discharge_today / 1000.0;
-    
+
     // Grid Net: Export - Import (Net Export). Positive = Good.
     // Rebus meter might not provide accurate WhIn/WhOut for consumption/import.
     // However, the Graph History successfully calculates Consumption = Solar + Battery + NetGrid(Px).
     // To ensure consistency and correctness (since Graph is verified), we calculate Consumption Today
     // by aggregating the Graph History data for "today".
-    
+
     // Fetch history for today using the same logic as the graph
     let history = build_history_data("today", tz_offset).await;
-    
+
     let mut total_consumption_kwh = 0.0;
     let mut total_export_kwh = 0.0;
     let mut total_import_kwh = 0.0;
@@ -743,12 +774,12 @@ async fn build_dashboard_metrics(tz_offset: i32) -> DashboardMetrics {
     // Integration: Sum(Power_kW * Time_h)
     // "today" buckets are 5 minutes = 5/60 hours
     let hours_per_bucket = 5.0 / 60.0;
-    
+
     for point in history.data {
         if point.consumption > 0.0 {
             total_consumption_kwh += point.consumption * hours_per_bucket;
         }
-        
+
         // Grid: Graph Negative = Export, Positive = Import
         if point.grid < 0.0 {
             total_export_kwh += (-point.grid) * hours_per_bucket;
@@ -756,9 +787,9 @@ async fn build_dashboard_metrics(tz_offset: i32) -> DashboardMetrics {
             total_import_kwh += point.grid * hours_per_bucket;
         }
     }
-    
+
     metrics.consumption_today = total_consumption_kwh;
-    
+
     // Update Grid Metrics from Graph Data
     metrics.grid_export_today = total_export_kwh;
     metrics.grid_import_today = total_import_kwh;
@@ -767,7 +798,7 @@ async fn build_dashboard_metrics(tz_offset: i32) -> DashboardMetrics {
     // Month calculation still uses Wh counters (fallback) unless we want to query large history
     metrics.grid_net_month = (grid_export_month - grid_import_month) / 1000.0;
 
-    // Consumption Yesterday? 
+    // Consumption Yesterday?
     // Requires processing yesterday_delta for all components.
     // For now, simplistically:
     // We can assume Consumption Yesterday is approx or calculate it if needed.
@@ -788,9 +819,9 @@ async fn refresh_baselines() {
         Some(p) => p,
         None => return,
     };
-    
+
     let now = Utc::now();
-    
+
     // Check if we need to refresh (throttle to 5 minutes)
     {
         let last = *LAST_BASELINE_UPDATE.read().await;
@@ -799,8 +830,13 @@ async fn refresh_baselines() {
         }
     }
 
-    let search_now = Utc::now(); 
-    let today_midnight = search_now.date_naive().and_hms_opt(0, 0, 0).unwrap().and_local_timezone(Utc).unwrap();
+    let search_now = Utc::now();
+    let today_midnight = search_now
+        .date_naive()
+        .and_hms_opt(0, 0, 0)
+        .unwrap()
+        .and_local_timezone(Utc)
+        .unwrap();
     let yesterday_midnight = today_midnight - chrono::Duration::days(1);
     let month_start = today_midnight.with_day(1).unwrap();
 
@@ -844,19 +880,26 @@ async fn refresh_baselines() {
             )
             ORDER BY timestamp ASC
         "#;
-        
+
         let mut map = HashMap::new();
         if let Ok(rows) = sqlx::query(q).bind(ts.timestamp()).fetch_all(pool).await {
             for row in rows {
                 let unique_id: String = row.get("uniqueid");
-                if map.contains_key(&unique_id) { continue; } // Already got earliest
-                
+                if map.contains_key(&unique_id) {
+                    continue;
+                } // Already got earliest
+
                 let val_str: String = row.get("value");
-                let val = if let Ok(v) = val_str.parse::<f64>() { v }
-                else if let Ok(v) = serde_json::from_str::<f64>(&val_str) { v }
-                else if let Ok(s) = serde_json::from_str::<String>(&val_str) { s.parse().unwrap_or(0.0) }
-                else { 0.0 };
-                
+                let val = if let Ok(v) = val_str.parse::<f64>() {
+                    v
+                } else if let Ok(v) = serde_json::from_str::<f64>(&val_str) {
+                    v
+                } else if let Ok(s) = serde_json::from_str::<String>(&val_str) {
+                    s.parse().unwrap_or(0.0)
+                } else {
+                    0.0
+                };
+
                 map.insert(unique_id, val);
             }
         }
@@ -871,25 +914,27 @@ async fn refresh_baselines() {
     *YESTERDAY_BASELINES.write().await = yesterday;
     *MONTHLY_BASELINES.write().await = monthly;
     *LAST_BASELINE_UPDATE.write().await = now;
-    
-    println!("Refreshed baselines. Today: {}, Yest: {}, Month: {}", 
-             DAILY_BASELINES.read().await.len(), 
-             YESTERDAY_BASELINES.read().await.len(),
-             MONTHLY_BASELINES.read().await.len());
+
+    println!(
+        "Refreshed baselines. Today: {}, Yest: {}, Month: {}",
+        DAILY_BASELINES.read().await.len(),
+        YESTERDAY_BASELINES.read().await.len(),
+        MONTHLY_BASELINES.read().await.len()
+    );
 }
 
 /// Build power flow from live values
 async fn build_power_flow() -> PowerFlow {
     let values = LIVE_VALUES.read().await;
     let mut flow = PowerFlow::default();
-    
+
     let mut solar_power_sum = 0.0;
     let mut battery_power_sum = 0.0;
-    
+
     for (_, value) in values.iter() {
         let point = value.point_name.to_lowercase();
         let device_type = classify_device_type(value.model_id, &value.model_name);
-        
+
         match (&device_type, point.as_str()) {
             // Solar/PV power from PV links (includes string combiners now)
             (DeviceType::PVLink, "dcw") => {
@@ -917,7 +962,7 @@ async fn build_power_flow() -> PowerFlow {
             // CT Power (consumption from external CT)
             // User requested to use Px values for consumption calc (Consumption = Solar - Export)
             // Disabling CTPow to prevent 'abs()' from counting export as consumption if CT is on grid.
-            /* 
+            /*
             (_, "ctpow") => {
                 if let Some(v) = extract_f64(&value.value) {
                     flow.consumption_power = v.abs();
@@ -927,10 +972,10 @@ async fn build_power_flow() -> PowerFlow {
             _ => {}
         }
     }
-    
+
     flow.solar_power = solar_power_sum;
     flow.battery_power = battery_power_sum;
-    
+
     // Calculate consumption from balance
     // Consumption = Solar + Battery - Export (Grid)
     // If Grid is Positive (Export), we Subtract it.
@@ -938,13 +983,13 @@ async fn build_power_flow() -> PowerFlow {
     // Solar(Gen) + Battery(Discharge) - Grid(NetExport) = Load
     if flow.consumption_power == 0.0 {
         flow.consumption_power = flow.solar_power + flow.battery_power - flow.grid_power;
-        
+
         // Ensure strictly positive (consumption can't be negative)
         if flow.consumption_power < 0.0 {
             flow.consumption_power = 0.0;
         }
     }
-    
+
     flow
 }
 
@@ -954,7 +999,7 @@ async fn build_full_dashboard_state() -> DashboardState {
         devices: build_dashboard_devices().await,
         metrics: build_dashboard_metrics(0).await,
         power_flow: build_power_flow().await,
-        alerts: vec![], // TODO: Implement alerts from device events
+        alerts: vec![],   // TODO: Implement alerts from device events
         controls: vec![], // TODO: Implement quick controls
         timestamp: Utc::now(),
     }
@@ -977,7 +1022,7 @@ pub async fn store_live_value(
         value,
         last_updated: Utc::now(),
     };
-    
+
     let mut values = LIVE_VALUES.write().await;
     values.insert(key, live_value);
 }
@@ -986,7 +1031,7 @@ pub async fn store_live_value(
 /// TODO: Connect this to the actual point_history database
 async fn build_history_data(period: &str, tz_offset: i32) -> HistoryResponse {
     use chrono::{Duration as ChronoDuration, Timelike};
-    
+
     let now = Utc::now();
     // JS getTimezoneOffset returns positive minutes for timezones BEHIND UTC (e.g. UTC-4 = 240)
     // To get local time, we subtract the offset
@@ -996,45 +1041,52 @@ async fn build_history_data(period: &str, tz_offset: i32) -> HistoryResponse {
         "yesterday" => {
             let local_yesterday = local_now - ChronoDuration::days(1);
             let local_midnight = local_yesterday.date_naive().and_hms_opt(0, 0, 0).unwrap();
-            let utc_start = DateTime::<Utc>::from_utc(local_midnight, Utc) + ChronoDuration::minutes(tz_offset as i64);
-            
+            let utc_start = DateTime::<Utc>::from_utc(local_midnight, Utc)
+                + ChronoDuration::minutes(tz_offset as i64);
+
             // End is Today 00:00 Local
             let local_today = local_now.date_naive().and_hms_opt(0, 0, 0).unwrap();
-            let utc_end = DateTime::<Utc>::from_utc(local_today, Utc) + ChronoDuration::minutes(tz_offset as i64);
-            
+            let utc_end = DateTime::<Utc>::from_utc(local_today, Utc)
+                + ChronoDuration::minutes(tz_offset as i64);
+
             (utc_start, utc_end, 5)
-        },
+        }
         "7days" | "7_days" => (now - ChronoDuration::days(7), now, 60),
         "30days" | "30_days" => (now - ChronoDuration::days(30), now, 240),
         "12months" | "12_months" => (now - ChronoDuration::days(365), now, 1440),
-        _ => { // today
+        _ => {
+            // today
             let local_midnight = local_now.date_naive().and_hms_opt(0, 0, 0).unwrap();
-            let utc_start = DateTime::<Utc>::from_utc(local_midnight, Utc) + ChronoDuration::minutes(tz_offset as i64);
+            let utc_start = DateTime::<Utc>::from_utc(local_midnight, Utc)
+                + ChronoDuration::minutes(tz_offset as i64);
             (utc_start, now, 5)
-        }, 
+        }
     };
-    
+
     // Query the database from point_history
     // Solar: %.64251.dcw (PV Link)
     // Battery: %.802.w (Battery)
     // Grid: %.64204.px1 and %.64204.px2 (REbus Export)
-    
+
     // Acquire DB connection
     let pool = match crate::state_mgmt::DB_POOL.get() {
         Some(p) => p,
         None => {
             warn!("DB pool not initialized");
-            return HistoryResponse { data: vec![], period: period.to_string() };
+            return HistoryResponse {
+                data: vec![],
+                period: period.to_string(),
+            };
         }
     };
-    
+
     // Define bucket size in seconds
     let bucket_seconds = (interval_minutes as i64) * 60;
-    
+
     // Use a map to aggregate data: timestamp_bucket -> uniqueid -> (sum, count)
     // We want to calculate the Average for each device for the bucket, then SUM the devices.
     let mut buckets: HashMap<i64, HashMap<String, (f64, i32)>> = HashMap::new();
-    
+
     // Determine timestamps
     let start_ts = start_time.timestamp();
     let end_ts = end_time.timestamp();
@@ -1053,16 +1105,20 @@ async fn build_history_data(period: &str, tz_offset: i32) -> HistoryResponse {
         )
         ORDER BY timestamp ASC
     "#;
-    
+
     match sqlx::query(query)
         .bind(start_ts)
         .bind(end_ts)
         .fetch_all(pool)
-        .await 
+        .await
     {
         Ok(rows) => {
-            info!("History Query found {} rows for period {}", rows.len(), period);
-            
+            info!(
+                "History Query found {} rows for period {}",
+                rows.len(),
+                period
+            );
+
             for row in rows {
                 // Get timestamp (try i64 first, then String parse)
                 let ts_val: i64 = match row.try_get("timestamp") {
@@ -1075,26 +1131,28 @@ async fn build_history_data(period: &str, tz_offset: i32) -> HistoryResponse {
                         }
                     }
                 };
-                
-                if ts_val == 0 { continue; }
-                
+
+                if ts_val == 0 {
+                    continue;
+                }
+
                 // Determine bucket start
                 let bucket = (ts_val / bucket_seconds) * bucket_seconds;
-                
+
                 let uniqueid: String = row.get("uniqueid");
                 let value_str: String = row.get("value");
-                
+
                 // Parse value
                 let val = if let Ok(v) = value_str.parse::<f64>() {
                     v
                 } else if let Ok(v) = serde_json::from_str::<f64>(&value_str) {
                     v
                 } else if let Ok(s) = serde_json::from_str::<String>(&value_str) {
-                     s.parse().unwrap_or(0.0)
+                    s.parse().unwrap_or(0.0)
                 } else {
                     0.0
                 };
-                
+
                 // Aggregate into Bucket -> UniqueID
                 let bucket_map = buckets.entry(bucket).or_default();
                 let entry = bucket_map.entry(uniqueid).or_insert((0.0, 0));
@@ -1106,23 +1164,25 @@ async fn build_history_data(period: &str, tz_offset: i32) -> HistoryResponse {
             error!("Error querying history: {}", e);
         }
     }
-    
+
     // Sort buckets
     let mut sorted_keys: Vec<_> = buckets.keys().cloned().collect();
     sorted_keys.sort();
-    
+
     let mut data = Vec::new();
     for ts in sorted_keys {
         if let Some(device_map) = buckets.get(&ts) {
             let mut solar_total = 0.0;
             let mut battery_total = 0.0;
             let mut grid_total = 0.0;
-            
+
             for (uid, (sum, count)) in device_map {
-                if *count == 0 { continue; }
+                if *count == 0 {
+                    continue;
+                }
                 let avg_val = sum / *count as f64;
                 let uid_lower = uid.to_lowercase();
-                
+
                 if uid_lower.contains(".102.w") {
                     // Solar (Inverter AC). We use this as the primary Solar source.
                     solar_total += avg_val;
@@ -1139,13 +1199,15 @@ async fn build_history_data(period: &str, tz_offset: i32) -> HistoryResponse {
                     grid_total -= avg_val;
                 }
             }
-            
+
             // Calculate consumption
             // Consumption = Solar + Battery + Grid (where Grid is -Export/+Import)
             // S(4000) + B(0) + G(-2000 Export) = 2000 Load. Correct.
             let mut consumption = solar_total + battery_total + grid_total;
-            if consumption < 0.0 { consumption = 0.0; }
-            
+            if consumption < 0.0 {
+                consumption = 0.0;
+            }
+
             if let Some(dt) = DateTime::from_timestamp(ts, 0) {
                 data.push(HistoryDataPoint {
                     timestamp: DateTime::<Utc>::from_utc(dt.naive_utc(), Utc),
@@ -1157,7 +1219,7 @@ async fn build_history_data(period: &str, tz_offset: i32) -> HistoryResponse {
             }
         }
     }
-    
+
     // Also include current live values as the VERY LAST point so the chart is up to date
     let live_flow = build_power_flow().await;
     data.push(HistoryDataPoint {
@@ -1168,11 +1230,9 @@ async fn build_history_data(period: &str, tz_offset: i32) -> HistoryResponse {
         grid: -live_flow.grid_power / 1000.0,
         consumption: live_flow.consumption_power / 1000.0,
     });
-    
+
     HistoryResponse {
         data,
         period: period.to_string(),
     }
 }
-
-

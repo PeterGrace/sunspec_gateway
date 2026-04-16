@@ -1,5 +1,5 @@
-use crate::payload::{HAConfigPayload, StatePayload};
 use crate::config_structs::GatewayConfig;
+use crate::payload::{HAConfigPayload, StatePayload};
 use anyhow::{bail, Result};
 use lazy_static::lazy_static;
 
@@ -346,18 +346,17 @@ pub async fn load_config() -> anyhow::Result<Option<GatewayConfig>> {
         None => return Ok(None),
     };
 
-    let row: Option<(String,)> = sqlx::query_as(
-        "SELECT value FROM settings WHERE key = 'gateway_config'"
-    )
-    .fetch_optional(pool)
-    .await
-    .unwrap_or(None);
+    let row: Option<(String,)> =
+        sqlx::query_as("SELECT value FROM settings WHERE key = 'gateway_config'")
+            .fetch_optional(pool)
+            .await
+            .unwrap_or(None);
 
     match row {
         Some((val,)) => {
             let config: GatewayConfig = serde_json::from_str(&val)?;
             Ok(Some(config))
-        },
+        }
         None => Ok(None),
     }
 }

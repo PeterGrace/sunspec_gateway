@@ -6,7 +6,9 @@ fn main() {
 
     // get the git hash
     let git_hash = match Command::new("git").args(&["rev-parse", "HEAD"]).output() {
-        Ok(output) if output.status.success() => String::from_utf8(output.stdout).unwrap_or("unknown".to_string()),
+        Ok(output) if output.status.success() => {
+            String::from_utf8(output.stdout).unwrap_or("unknown".to_string())
+        }
         _ => "unknown".to_string(),
     };
     println!("cargo:rustc-env=GIT_HASH={}", git_hash.trim());

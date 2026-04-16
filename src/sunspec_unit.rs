@@ -1,15 +1,10 @@
-use crate::{GatewayError, MODEL_HASH};
-// use anyhow::bail;
-// use std::collections::HashMap;
-// use std::time::Duration;
 use crate::consts::*;
 use crate::monitored_point::MonitoredPoint;
 use crate::payload::DeviceInfo;
+use crate::{GatewayError, MODEL_HASH};
 use sunspec_rs::sunspec_connection::{SunSpecConnection, TlsConfig};
 use sunspec_rs::sunspec_data::SunSpecData;
 use sunspec_rs::sunspec_models::{PointIdentifier, ValueType};
-// use tokio::task;
-// use tokio::time::sleep;
 
 #[derive(Clone, Debug)]
 pub struct SunSpecUnit {
@@ -59,35 +54,6 @@ impl SunSpecUnit {
                 return Err(GatewayError::Error(format!("{e}")));
             }
         }
-        // let populate_conn = conn.clone();
-        // let populate_data = data.clone();
-        // let task = task::spawn(async move {
-        //     match populate_conn.populate_models(&populate_data).await {
-        //         Ok(m) => Ok(m.clone()),
-        //         Err(e) => bail!("Can't populate models: {e}"),
-        //     }
-        // });
-        // while !task.is_finished() {
-        //     if let Some(shutting_down) = SHUTDOWN.get() {
-        //         if *shutting_down {
-        //             info!("Shutdown received while populate_models running, exiting now");
-        //             task.abort();
-        //             return Err(GatewayError::ExitingThread);
-        //         }
-        //     }
-        //     sleep(Duration::from_millis(GENERIC_WAIT_MILLIS)).await;
-        // }
-        // match task.await {
-        //     Ok(taskresult) => match taskresult {
-        //         Ok(model) => conn.models = model.clone(),
-        //         Err(e) => {
-        //             return Err(GatewayError::Error(format!("{e}")));
-        //         }
-        //     },
-        //     Err(e) => {
-        //         return Err(GatewayError::Error("{e}"));
-        //     }
-        // }
         let common = match conn.models.get(&COMMON_MODEL_ID) {
             None => {
                 return Err(GatewayError::Error(format!(

@@ -1,12 +1,12 @@
 use crate::config_structs::GatewayConfig;
+use crate::modules::status_structs::SystemStatus;
 use crate::state::AppState;
 use crate::state_mgmt::{load_config, save_config};
 use crate::SETTINGS;
 use axum::extract::State;
-use axum::{Json, Router};
 use axum::routing::get;
-use utoipa_axum::{routes, router::OpenApiRouter};
-use crate::modules::status_structs::SystemStatus;
+use axum::{Json, Router};
+use utoipa_axum::{router::OpenApiRouter, routes};
 
 pub fn settings_routes(state: AppState) -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
@@ -48,14 +48,14 @@ pub async fn update_config(
     if let Err(e) = save_config(&payload).await {
         error!("Failed to save config to DB: {e}");
     }
-    
+
     // Update memory
     let mut config = SETTINGS.write().await;
     *config = payload.clone();
-    
+
     // Note: Some changes (like MQTT) might require a restart to take effect fully
     // as we don't hot-reload the MQTT client or SunSpec connections yet.
-    
+
     Json(payload)
 }
 

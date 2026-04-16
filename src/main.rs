@@ -41,14 +41,14 @@ use crate::modules::points::point_routes;
 use crate::modules::settings::settings_routes;
 use crate::mqtt_connection::MqttConnection;
 use crate::mqtt_poll::mqtt_poll_loop;
-use crate::state_mgmt::{prepare_to_database, load_config, save_config};
+use crate::state_mgmt::{load_config, prepare_to_database, save_config};
 use crate::sunspec_poll::poll_loop;
 
-// use console_subscriber as tokio_console_subscriber;
+use console_subscriber as tokio_console_subscriber;
 use futures::FutureExt;
 use lazy_static::lazy_static;
-// use opentelemetry::global;
-// use opentelemetry::sdk::propagation::TraceContextPropagator;
+use opentelemetry::global;
+use opentelemetry::sdk::propagation::TraceContextPropagator;
 use opentelemetry::sdk::trace::{BatchConfig, Tracer};
 use opentelemetry::sdk::{trace, Resource};
 use opentelemetry::KeyValue;
@@ -101,7 +101,7 @@ lazy_static! {
     pub static ref API_DOC: OnceCell<utoipa::openapi::OpenApi> = OnceCell::new();
 
     static ref MODEL_HASH: RwLock<HashMap<String, HashMap<u16, ModelData>>> = RwLock::new(HashMap::new());
-    
+
     /// Live values from polling, used by dashboard API
     pub static ref LIVE_VALUES: RwLock<HashMap<String, LiveValue>> = RwLock::new(HashMap::new());
 
@@ -140,12 +140,12 @@ async fn main() {
     let bcasttx = broadcast_tx.clone();
     let _ = ctrlc::set_handler(move || {
         println!("Received Ctrl-C, communicating to threads to stop");
-        //opentelemetry::global::shutdown_tracer_provider();
+        opentelemetry::global::shutdown_tracer_provider();
         let _ = SHUTDOWN.set(true);
         let _ = bcasttx.send(IPCMessage::Shutdown);
     });
 
-    // let console_layer = tokio_console_subscriber::spawn();
+    let console_layer = tokio_console_subscriber::spawn();
     let env_filter = EnvFilter::try_from_default_env().unwrap_or(EnvFilter::new("INFO"));
     let format_layer = tracing_subscriber::fmt::layer()
         .event_format(
@@ -156,7 +156,7 @@ async fn main() {
         .with_span_events(FmtSpan::NONE);
 
     let subscriber = Registry::default()
-        // .with(console_layer)
+        .with(console_layer)
         .with(env_filter)
         .with(format_layer);
 
@@ -182,7 +182,7 @@ async fn main() {
     if let Err(e) = prepare_to_database().await {
         die(&format!("Can't database: {e}"))
     }
-    
+
     //region initialize settings from DB or Config File
     {
         // Try to load from DB
@@ -198,11 +198,12 @@ async fn main() {
             Some(c) => {
                 info!("Loaded configuration from Database");
                 c
-            },
+            }
             None => {
                 info!("No config in DB, attempting to load from config.yaml");
                 // Load from YAML
-                let cfg_file = std::env::var("CONFIG_FILE_PATH").unwrap_or("./config.yaml".to_string());
+                let cfg_file =
+                    std::env::var("CONFIG_FILE_PATH").unwrap_or("./config.yaml".to_string());
                 let yaml = std::fs::read_to_string(&cfg_file).unwrap_or_else(|e| {
                     warn!("Can't read config file: {e}. Using defaults.");
                     String::default()
@@ -211,7 +212,7 @@ async fn main() {
                     warn!("Couldn't deserialize GatewayConfig: {e}. Using defaults.");
                     GatewayConfig::default()
                 });
-                
+
                 // Save to DB for next time
                 if let Err(e) = save_config(&gc).await {
                     error!("Failed to migrate config to DB: {e}");
@@ -233,7 +234,9 @@ async fn main() {
     let state = AppState {
         jwks_cache: JwksCache::new(),
         user_cache,
-        status: Arc::new(RwLock::new(crate::modules::status_structs::SystemStatus::default())),
+        status: Arc::new(RwLock::new(
+            crate::modules::status_structs::SystemStatus::default(),
+        )),
     };
 
     //region axum route setup and serve()
@@ -261,7 +264,10 @@ async fn main() {
 
     let public_routes = OpenApiRouter::new()
         .merge(register_routes(state.clone()))
-        .nest_service("/ui", ServeDir::new("ui").fallback(ServeFile::new("ui/index.html")))
+        .nest_service(
+            "/ui",
+            ServeDir::new("ui").fallback(ServeFile::new("ui/index.html")),
+        )
         .nest(
             &format!("{API_VER}/{POINTS_TAG}"),
             point_routes(state.clone()),
@@ -271,12 +277,12 @@ async fn main() {
             dashboard_routes(state.clone()),
         )
         .nest(
-             &format!("{API_VER}/settings"),
-             settings_routes(state.clone()),
+            &format!("{API_VER}/settings"),
+            settings_routes(state.clone()),
         )
         .nest(
-             &format!("{API_VER}/controls"),
-             controls_routes().with_state(state.clone()),
+            &format!("{API_VER}/controls"),
+            controls_routes().with_state(state.clone()),
         )
         .route(API_PATH, get(openapi));
 
@@ -306,8 +312,8 @@ async fn main() {
         .await
         .expect("Failed to bind");
     let _ = tokio::spawn(async move {
-            let _ = axum::serve(listener, app).await;
-        });
+        let _ = axum::serve(listener, app).await;
+    });
 
     //endregion
 
@@ -475,17 +481,19 @@ async fn main() {
                                 let taskname = format!("worker-{}", unit.serial_number);
                                 let status = state.status.clone();
                                 tasks.spawn(async move {
-                                        match poll_loop(&unit, tx, bcast_rx, status).await {
-                                            Ok(_) => {
-                                                error!("Exited... OK? from the sunspec poll?  Unpossible!");
-                                                Ok(())
-                                            },
-                                            Err(e) => {
-                                                error!("{taskname} thread exited in error: {e}");
-                                                return Err(e)
-                                            },
+                                    match poll_loop(&unit, tx, bcast_rx, status).await {
+                                        Ok(_) => {
+                                            error!(
+                                                "Exited... OK? from the sunspec poll?  Unpossible!"
+                                            );
+                                            Ok(())
                                         }
-                                    });
+                                        Err(e) => {
+                                            error!("{taskname} thread exited in error: {e}");
+                                            return Err(e);
+                                        }
+                                    }
+                                });
                             } else {
                                 error!("Reconnect was unsuccessful.");
                             }
