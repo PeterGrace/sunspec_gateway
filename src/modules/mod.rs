@@ -5,7 +5,6 @@ use axum::response::{IntoResponse, Response};
 use axum::Json;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use sqlx::SqlitePool;
 use std::error::Error;
 use utoipa::ToSchema;
 
@@ -21,11 +20,13 @@ pub enum AuthorizableType {
     User(User),
 }
 
+#[allow(clippy::upper_case_acronyms)]
 #[derive(PartialEq)]
 pub enum RBAC {
     Read,
     Write,
     Delete,
+    #[allow(dead_code)]
     Admin,
 }
 
@@ -52,6 +53,7 @@ impl AppAPIResponse {
             data: None,
         }
     }
+    #[allow(dead_code)]
     pub fn data<S: Into<String>, D: Into<Value>>(msg: S, data: D) -> Self {
         Self {
             message: msg.into(),

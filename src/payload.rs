@@ -6,7 +6,6 @@ use crate::state_mgmt::{
 };
 use crate::sunspec_unit::SunSpecUnit;
 use chrono::{DateTime, Utc};
-use num_traits::pow::Pow;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use sunspec_rs::sunspec_connection::apply_scale_factor;
@@ -32,6 +31,9 @@ pub enum PayloadValueType {
     None,
 }
 
+// HAConfigPayload is significantly larger than the other variants; boxing it would
+// cascade API changes across many call sites, so we suppress this lint here.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum Payload {
@@ -175,8 +177,8 @@ pub async fn generate_payloads(
     config_payload.unique_id = format!("{sn}.{model}.{point_name}");
     config_payload.entity_id = format!("sensor.{sn}_{model}_{point_name}");
     config_payload.device = unit.device_info.clone();
-    if val.is_some() && point_data.is_some() {
-        match val.unwrap() {
+    if let (Some(val), Some(point_data)) = (val, point_data) {
+        match val {
             ValueType::String(str) => {
                 debug!("Response for {model}/{point_name}: {str}");
                 state_payload.value = PayloadValueType::String(str.to_owned())
@@ -187,12 +189,11 @@ pub async fn generate_payloads(
                     // we are overriding the default uom from config
                     config_payload.native_uom = monitored_point.uom.clone();
                 } else {
-                    config_payload.native_uom = point_data.unwrap().units.clone();
+                    config_payload.native_uom = point_data.units.clone();
                 }
 
                 // if we are employing a scale factor on an int, it becomes a float
                 if let Some(scale) = monitored_point.scale_factor {
-                    let scaled_value: f64;
                     let scaled_value = apply_scale_factor(*int as f64, scale);
                     if monitored_point.precision.is_some() {
                         config_payload.suggested_display_precision = monitored_point.precision;
@@ -213,16 +214,14 @@ pub async fn generate_payloads(
                     }
                     match get_history(format!("{sn}.{model}.{point_name}")).await {
                         Ok(ag) => {
-                            let mut deviations: u16 = CHECK_DEVIATIONS_COUNT;
-                            if monitored_point.check_deviations.is_some() {
-                                deviations = monitored_point.check_deviations.unwrap();
-                            }
-                            let stdev_checked: f64;
-                            if ag.stdev.abs() < 1.0 {
-                                stdev_checked = ag.stdev.abs() + 1.0
+                            let deviations: u16 = monitored_point
+                                .check_deviations
+                                .unwrap_or(CHECK_DEVIATIONS_COUNT);
+                            let stdev_checked: f64 = if ag.stdev.abs() < 1.0 {
+                                ag.stdev.abs() + 1.0
                             } else {
-                                stdev_checked = ag.stdev.abs()
-                            }
+                                ag.stdev.abs()
+                            };
                             if scaled_value < ag.min || scaled_value > ag.max {
                                 // our point is lower than the lowest seen so far
                                 let delta_median = scaled_value - ag.median;
@@ -240,7 +239,7 @@ pub async fn generate_payloads(
 
                     state_payload.value = PayloadValueType::Float(scaled_value)
                 } else {
-                    state_payload.value = PayloadValueType::Int(*int as i64)
+                    state_payload.value = PayloadValueType::Int(*int)
                 }
             }
             ValueType::Float(float) => {
@@ -254,14 +253,13 @@ pub async fn generate_payloads(
                     // we are overriding the default uom from config
                     config_payload.native_uom = monitored_point.uom.clone();
                 } else {
-                    config_payload.native_uom = point_data.unwrap().units.clone();
+                    config_payload.native_uom = point_data.units.clone();
                 }
-                let scaled_value: f64;
-                if let Some(scale) = monitored_point.scale_factor {
-                    scaled_value = apply_scale_factor(*float, scale);
+                let scaled_value: f64 = if let Some(scale) = monitored_point.scale_factor {
+                    apply_scale_factor(*float, scale)
                 } else {
-                    scaled_value = *float;
-                }
+                    *float
+                };
                 if let Some(minimum) = monitored_point.value_min {
                     if scaled_value < minimum {
                         warn!("{log_prefix}: {scaled_value} is less than the minimum value specified ({minimum})");
@@ -276,16 +274,14 @@ pub async fn generate_payloads(
                 }
                 match get_history(format!("{sn}.{model}.{point_name}")).await {
                     Ok(ag) => {
-                        let mut deviations: u16 = CHECK_DEVIATIONS_COUNT;
-                        if monitored_point.check_deviations.is_some() {
-                            deviations = monitored_point.check_deviations.unwrap();
-                        }
-                        let stdev_checked: f64;
-                        if ag.stdev.abs() < 1.0 {
-                            stdev_checked = ag.stdev.abs() + 1.0
+                        let deviations: u16 = monitored_point
+                            .check_deviations
+                            .unwrap_or(CHECK_DEVIATIONS_COUNT);
+                        let stdev_checked: f64 = if ag.stdev.abs() < 1.0 {
+                            ag.stdev.abs() + 1.0
                         } else {
-                            stdev_checked = ag.stdev.abs()
-                        }
+                            ag.stdev.abs()
+                        };
                         if scaled_value < ag.min || scaled_value > ag.max {
                             // our point is lower than the lowest seen so far
                             let delta_median = scaled_value - ag.median;
@@ -302,7 +298,7 @@ pub async fn generate_payloads(
                 };
 
                 state_payload.value = PayloadValueType::Float(scaled_value);
-                if let Some(literal) = &point_data.unwrap().literal {
+                if let Some(literal) = &point_data.literal {
                     // if we have a literal from the model data....
                     if literal.label.is_some() {
                         config_payload.name = literal.label.clone().unwrap();
@@ -338,8 +334,8 @@ pub async fn generate_payloads(
                 let mut updated_uniques: Vec<String> = vec![];
 
                 let state_obj_id = format!("{sn}.{model}.{point_name}");
-                let mut known_states: Vec<String> = get_bitfield_history(&state_obj_id).await;
-                let mut unreported_states: Vec<String> = known_states
+                let known_states: Vec<String> = get_bitfield_history(&state_obj_id).await;
+                let unreported_states: Vec<String> = known_states
                     .iter()
                     .filter(|s| !vec.contains(s))
                     .cloned()
@@ -427,7 +423,7 @@ pub async fn generate_payloads(
                 // now, lets set state to off for points we didn't see
                 match check_needs_adjust(updated_uniques).await {
                     Ok(stale) => {
-                        if stale.len() > 0 {
+                        if !stale.is_empty() {
                             debug!(
                                 "{log_prefix}: sending off for {} binary sensors",
                                 stale.len()

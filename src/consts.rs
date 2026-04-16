@@ -1,3 +1,4 @@
+#[allow(dead_code)]
 pub const APP_NAME: &str = "sunspec_gateway";
 pub const MPSC_BUFFER_SIZE: usize = 1024_usize;
 pub const MINIMUM_QUERY_INTERVAL_SECS: u16 = 5_u16;
@@ -35,4 +36,5 @@ pub const POINTS_TAG: &str = "points";
 pub const POINTS_TAG_DESCRIPTION: &str = "Points";
 
 pub const DASHBOARD_TAG: &str = "dashboard";
+#[allow(dead_code)]
 pub const DASHBOARD_TAG_DESCRIPTION: &str = "Dashboard API for real-time device monitoring";

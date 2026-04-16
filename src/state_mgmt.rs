@@ -22,12 +22,14 @@ pub struct point_history {
 }
 
 #[derive(Default, Debug, Clone, FromRow)]
+#[allow(dead_code)]
 pub struct BitfieldHistory {
     pub uniqueid: String,
     pub field_name: String,
 }
 
 #[derive(Default, Debug, Clone, FromRow)]
+#[allow(dead_code)]
 pub struct AggregatedMeasurements {
     pub min: f64,
     pub max: f64,
@@ -122,7 +124,7 @@ pub async fn cull_records_to(uniqueid: String, cull_num: u32) -> anyhow::Result<
 
 pub async fn check_needs_adjust(uniques_present: Vec<String>) -> anyhow::Result<Vec<String>> {
     let pool = DB_POOL.get().unwrap();
-    let split_vec = match uniques_present.get(0).clone() {
+    let split_vec = match uniques_present.first() {
         Some(s) => s,
         None => {
             return Ok(vec![]);

@@ -1,11 +1,5 @@
-use axum::{
-    extract::State,
-    http::StatusCode,
-    routing::{get, post},
-    Json, Router,
-};
+use axum::{extract::State, http::StatusCode, Json};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use utoipa::ToSchema;
 
 use crate::modules::AppAPIResponse;
@@ -219,22 +213,20 @@ pub async fn get_control_points(
         // Find all serial numbers that have this model
         let mut seen_serials = std::collections::HashSet::new();
 
-        for (_key, value) in live_values.iter() {
-            if value.model_id == def.model_id {
-                if seen_serials.insert(value.serial_number.clone()) {
-                    // Look up the specific point value
-                    let point_key = format!(
-                        "{}.{}.{}",
-                        value.serial_number, def.model_id, def.point_name
-                    );
-                    let current_value = live_values.get(&point_key).map(|v| v.value.clone());
+        for (_, value) in live_values.iter() {
+            if value.model_id == def.model_id && seen_serials.insert(value.serial_number.clone()) {
+                // Look up the specific point value
+                let point_key = format!(
+                    "{}.{}.{}",
+                    value.serial_number, def.model_id, def.point_name
+                );
+                let current_value = live_values.get(&point_key).map(|v| v.value.clone());
 
-                    points.push(ControlPointState {
-                        def: def.clone(),
-                        serial_number: value.serial_number.clone(),
-                        current_value,
-                    });
-                }
+                points.push(ControlPointState {
+                    def: def.clone(),
+                    serial_number: value.serial_number.clone(),
+                    current_value,
+                });
             }
         }
     }
@@ -309,13 +301,11 @@ pub async fn write_control_point(
     }
 
     // For uint16, validate range
-    if def.data_type == "uint16" {
-        if value < 0 || value > 65535 {
-            return Err((
-                StatusCode::BAD_REQUEST,
-                Json(AppAPIResponse::message("Value must be between 0 and 65535")),
-            ));
-        }
+    if def.data_type == "uint16" && !(0..=65535).contains(&value) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(AppAPIResponse::message("Value must be between 0 and 65535")),
+        ));
     }
 
     // Find the device that has both this model AND this serial number
@@ -330,7 +320,7 @@ pub async fn write_control_point(
         // Check if this device has the model we want
         if models.contains_key(&request.model_id) {
             // Check if any live value for this model has our serial number
-            for (_lv_key, lv) in live_values.iter() {
+            for (_, lv) in live_values.iter() {
                 if lv.serial_number == request.serial_number && lv.model_id == request.model_id {
                     device_key = Some(key.clone());
                     break;

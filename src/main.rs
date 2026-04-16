@@ -47,7 +47,9 @@ use crate::sunspec_poll::poll_loop;
 use console_subscriber as tokio_console_subscriber;
 use futures::FutureExt;
 use lazy_static::lazy_static;
+#[allow(unused_imports)]
 use opentelemetry::global;
+#[allow(unused_imports)]
 use opentelemetry::sdk::propagation::TraceContextPropagator;
 use opentelemetry::sdk::trace::{BatchConfig, Tracer};
 use opentelemetry::sdk::{trace, Resource};
@@ -55,7 +57,6 @@ use opentelemetry::KeyValue;
 use opentelemetry_otlp::WithExportConfig;
 
 use std::collections::{HashMap, VecDeque};
-use std::fs;
 use std::process;
 use std::sync::Arc;
 
@@ -163,7 +164,7 @@ async fn main() {
     tracing::subscriber::set_global_default(subscriber)
         .expect("Can't set global subscriber for logging.");
 
-    let mut tracer: Option<Tracer> = None;
+    let tracer: Option<Tracer> = None;
     // let config = SETTINGS.read().await;
     //     let t = config.tracing.clone().unwrap();
     //     let tracer = Some(make_tracer(t.url, t.sample_rate));
@@ -311,7 +312,7 @@ async fn main() {
     let listener = TcpListener::bind((Ipv6Addr::UNSPECIFIED, 8300))
         .await
         .expect("Failed to bind");
-    let _ = tokio::spawn(async move {
+    tokio::spawn(async move {
         let _ = axum::serve(listener, app).await;
     });
 
@@ -399,13 +400,12 @@ async fn main() {
 
     //region create sunspec thread workers
     for d in devices {
-        let mut tasks = TASK_PILE.write().await;
         let tx = tx.clone();
         let bcast_rx = broadcast_tx.clone().subscribe();
         let status = state.status.clone();
         let task_name = format!("poll_loop_{}", d.serial_number);
         let span = tracing::info_span!("task", name = task_name.as_str());
-        let bar = tokio::spawn(
+        tokio::spawn(
             async move {
                 match poll_loop(&d, tx, bcast_rx, status).await {
                     Ok(_) => Ok(()),
@@ -425,92 +425,88 @@ async fn main() {
     loop {
         //endregion
         //region sunspec device channel loop handling
-        while rx.len() > 0 {
-            match rx.try_recv() {
-                Ok(ipcm) => {
-                    match ipcm {
-                        IPCMessage::Shutdown => {
-                            unreachable!();
+        while !rx.is_empty() {
+            if let Ok(ipcm) = rx.try_recv() {
+                match ipcm {
+                    IPCMessage::Shutdown => {
+                        unreachable!();
+                    }
+                    IPCMessage::Outbound(o) => {
+                        if mqtt_handler.is_some() {
+                            msg_queue.push_front(o);
                         }
-                        IPCMessage::Outbound(o) => {
-                            if mqtt_handler.is_some() {
-                                msg_queue.push_front(o);
+                    }
+                    IPCMessage::Error(e) => {
+                        die(&format!("serial_number={}: {}", e.serial_number, e.msg));
+                    }
+                    IPCMessage::PleaseReconnect(addr, slave) => {
+                        let tx = tx.clone();
+                        let bcast_rx = broadcast_tx.subscribe();
+                        let mut tls: Option<TlsConfig> = None;
+                        warn!("Reconnect requested for {addr}/{slave}");
+                        for u in config.units.clone() {
+                            if u.addr == addr && u.slaves.contains(&slave) {
+                                tls = u.tls.clone();
+                                break;
                             }
                         }
-                        IPCMessage::Error(e) => {
-                            die(&format!("serial_number={}: {}", e.serial_number, e.msg));
-                        }
-                        IPCMessage::PleaseReconnect(addr, slave) => {
-                            let tx = tx.clone();
-                            let bcast_rx = broadcast_tx.subscribe();
-                            let mut tls: Option<TlsConfig> = None;
-                            warn!("Reconnect requested for {addr}/{slave}");
-                            for u in config.units.clone() {
-                                if u.addr == addr && u.slaves.contains(&slave) {
-                                    tls = u.tls.clone();
-                                    break;
-                                }
-                            }
-                            let ssu: Option<SunSpecUnit> = match tokio::time::timeout(
-                                Duration::from_secs(SUNSPEC_DEVICE_CONNECT_TIMEOUT),
-                                SunSpecUnit::new(addr.clone(), slave.to_string(), tls),
-                            )
-                            .await
-                            {
-                                Ok(good) => match good {
+                        let ssu: Option<SunSpecUnit> = match tokio::time::timeout(
+                            Duration::from_secs(SUNSPEC_DEVICE_CONNECT_TIMEOUT),
+                            SunSpecUnit::new(addr.clone(), slave.to_string(), tls),
+                        )
+                        .await
+                        {
+                            Ok(good) => {
+                                match good {
                                     Ok(unit) => Some(unit),
                                     Err(e) => {
                                         warn!("{addr}:{slave} - Couldn't reconnect to sunspec unit: {e}");
                                         retry_queue.push_back((addr, slave, Utc::now()));
                                         None
                                     }
-                                },
-                                Err(e) => {
-                                    warn!("{addr}:{slave} - Couldn't create new sunspecunit to replace dead conn: {e}");
-                                    retry_queue.push_back((addr, slave, Utc::now()));
-                                    None
                                 }
-                            };
-                            if ssu.is_some() {
-                                let unit = ssu.unwrap();
-                                warn!(
-                                    "{}/{} - Initial reconnection initiated, starting fresh task",
-                                    unit.addr, unit.slave_id
-                                );
-                                let mut tasks = TASK_PILE.write().await;
-                                let taskname = format!("worker-{}", unit.serial_number);
-                                let status = state.status.clone();
-                                tasks.spawn(async move {
-                                    match poll_loop(&unit, tx, bcast_rx, status).await {
-                                        Ok(_) => {
-                                            error!(
-                                                "Exited... OK? from the sunspec poll?  Unpossible!"
-                                            );
-                                            Ok(())
-                                        }
-                                        Err(e) => {
-                                            error!("{taskname} thread exited in error: {e}");
-                                            return Err(e);
-                                        }
-                                    }
-                                });
-                            } else {
-                                error!("Reconnect was unsuccessful.");
                             }
-                        }
-                        IPCMessage::Inbound(_) => {
-                            // we don't send inbounds to mqtt
-                            unreachable!();
+                            Err(e) => {
+                                warn!("{addr}:{slave} - Couldn't create new sunspecunit to replace dead conn: {e}");
+                                retry_queue.push_back((addr, slave, Utc::now()));
+                                None
+                            }
+                        };
+                        if let Some(unit) = ssu {
+                            warn!(
+                                "{}/{} - Initial reconnection initiated, starting fresh task",
+                                unit.addr, unit.slave_id
+                            );
+                            let mut tasks = TASK_PILE.write().await;
+                            let taskname = format!("worker-{}", unit.serial_number);
+                            let status = state.status.clone();
+                            tasks.spawn(async move {
+                                match poll_loop(&unit, tx, bcast_rx, status).await {
+                                    Ok(_) => {
+                                        error!("Exited... OK? from the sunspec poll?  Unpossible!");
+                                        Ok(())
+                                    }
+                                    Err(e) => {
+                                        error!("{taskname} thread exited in error: {e}");
+                                        Err(e)
+                                    }
+                                }
+                            });
+                        } else {
+                            error!("Reconnect was unsuccessful.");
                         }
                     }
+                    IPCMessage::Inbound(_) => {
+                        // we don't send inbounds to mqtt
+                        unreachable!();
+                    }
                 }
-                Err(_) => {}
             }
         }
 
-        while from_mqtt_rx.len() > 0 {
-            match from_mqtt_rx.try_recv() {
-                Ok(recvd) => match recvd {
+        while !from_mqtt_rx.is_empty() {
+            if let Ok(recvd) = from_mqtt_rx.try_recv() {
+                match recvd {
                     IPCMessage::Inbound(inmsg) => {
                         info!(
                             "Received payload for {},{},{}:{}",
@@ -530,8 +526,7 @@ async fn main() {
                     IPCMessage::Error(_) => {
                         unreachable!();
                     }
-                },
-                Err(_) => {}
+                }
             }
         }
 
@@ -562,32 +557,18 @@ async fn main() {
 
         // check cleanups
         let mut tasks = TASK_PILE.write().await;
-        match tasks.join_next().now_or_never() {
-            Some(task) => {
-                match task {
-                    Some(t) => {
-                        match t {
-                            Ok(t1) => match t1 {
-                                Ok(_) => {
-                                    error!("Task exited, which should not happen.  Hopefully reconnecting.")
-                                }
-                                Err(e) => {
-                                    error!("Task exited with Ok(Err(e)): {e}");
-                                }
-                            },
-                            Err(e) => {
-                                // TODO: what does Err mean here?
-                                error!("Got an error when checking joinset: {e}");
-                            }
-                        }
-                    }
-                    None => {
-                        // No tasks waiting to report in
-                    }
+        if let Some(Some(t)) = tasks.join_next().now_or_never() {
+            match t {
+                Ok(Ok(_)) => {
+                    error!("Task exited, which should not happen.  Hopefully reconnecting.")
                 }
-            }
-            None => {
-                // no tasks are ready to be queried
+                Ok(Err(e)) => {
+                    error!("Task exited with Ok(Err(e)): {e}");
+                }
+                Err(e) => {
+                    // TODO: what does Err mean here?
+                    error!("Got an error when checking joinset: {e}");
+                }
             }
         }
 
@@ -597,8 +578,7 @@ async fn main() {
             }
         }
 
-        if tracer.is_some() {
-            let t = tracer.clone().unwrap();
+        if let Some(t) = &tracer {
             let tp = t.provider().unwrap();
             let _rs = tp.force_flush();
         }
@@ -630,7 +610,7 @@ pub fn make_tracer(url: String, sample: f32) -> Tracer {
         //.with_scheduled_delay(Duration::from_millis(5000))
         .with_max_export_timeout(Duration::from_secs(10))
         .with_max_queue_size(16384);
-    let otlp_tracer = opentelemetry_otlp::new_pipeline()
+    opentelemetry_otlp::new_pipeline()
         .tracing()
         .with_exporter(exporter)
         .with_trace_config(
@@ -655,8 +635,7 @@ pub fn make_tracer(url: String, sample: f32) -> Tracer {
         )
         .with_batch_config(batch_config)
         .install_batch(opentelemetry::runtime::Tokio)
-        .expect("Can't create tracer");
-    otlp_tracer
+        .expect("Can't create tracer")
 }
 
 async fn redirect_to_ui() -> Redirect {

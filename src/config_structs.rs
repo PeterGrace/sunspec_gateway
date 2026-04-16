@@ -63,10 +63,10 @@ pub struct PointConfig {
 impl PointConfig {
     pub fn name(&self) -> String {
         if self.catalog_ref.is_some() {
-            return format!("{}", self.catalog_ref.clone().unwrap());
+            return self.catalog_ref.clone().unwrap();
         }
         if self.point.is_some() {
-            return format!("{}", self.point.clone().unwrap());
+            return self.point.clone().unwrap();
         }
         "".to_string()
     }

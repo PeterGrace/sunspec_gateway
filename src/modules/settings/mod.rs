@@ -1,11 +1,10 @@
 use crate::config_structs::GatewayConfig;
 use crate::modules::status_structs::SystemStatus;
 use crate::state::AppState;
-use crate::state_mgmt::{load_config, save_config};
+use crate::state_mgmt::save_config;
 use crate::SETTINGS;
 use axum::extract::State;
-use axum::routing::get;
-use axum::{Json, Router};
+use axum::Json;
 use utoipa_axum::{router::OpenApiRouter, routes};
 
 pub fn settings_routes(state: AppState) -> OpenApiRouter<AppState> {

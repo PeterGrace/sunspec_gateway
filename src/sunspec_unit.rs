@@ -12,6 +12,7 @@ pub struct SunSpecUnit {
     pub slave_id: u8,
     pub conn: SunSpecConnection,
     pub data: SunSpecData,
+    #[allow(dead_code)]
     pub points: Vec<MonitoredPoint>,
     pub serial_number: String,
     pub device_info: DeviceInfo,
@@ -56,9 +57,9 @@ impl SunSpecUnit {
         }
         let common = match conn.models.get(&COMMON_MODEL_ID) {
             None => {
-                return Err(GatewayError::Error(format!(
-                    "Couldn't get model definition for common"
-                )));
+                return Err(GatewayError::Error(
+                    "Couldn't get model definition for common".to_string(),
+                ));
             }
             Some(m) => m,
         };
@@ -72,9 +73,9 @@ impl SunSpecUnit {
                 if let ValueType::String(str) = p.value.unwrap() {
                     str
                 } else {
-                    return Err(GatewayError::Error(format!(
-                        "Received a point that wasn't a string for serial number."
-                    )));
+                    return Err(GatewayError::Error(
+                        "Received a point that wasn't a string for serial number.".to_string(),
+                    ));
                 }
             }
             Err(e) => {
@@ -87,10 +88,8 @@ impl SunSpecUnit {
             .get_point(common.clone(), PointIdentifier::Point("Vr".to_string()))
             .await
         {
-            if let Some(value) = firmware.value {
-                if let ValueType::String(ver) = value {
-                    device_info.sw_version = ver;
-                }
+            if let Some(ValueType::String(ver)) = firmware.value {
+                device_info.sw_version = ver;
             }
         }
         let manufacturer: String = match conn
@@ -102,9 +101,9 @@ impl SunSpecUnit {
                 if let ValueType::String(str) = p.value.unwrap() {
                     str
                 } else {
-                    return Err(GatewayError::Error(format!(
-                        "Received a point that wasn't a string for manufacturer."
-                    )));
+                    return Err(GatewayError::Error(
+                        "Received a point that wasn't a string for manufacturer.".to_string(),
+                    ));
                 }
             }
             Err(e) => {
@@ -120,9 +119,10 @@ impl SunSpecUnit {
                 if let ValueType::String(str) = p.value.unwrap() {
                     str
                 } else {
-                    return Err(GatewayError::Error(format!(
+                    return Err(GatewayError::Error(
                         "Received a point that wasn't a string for physical device model name."
-                    )));
+                            .to_string(),
+                    ));
                 }
             }
             Err(e) => return Err(GatewayError::Error(format!("{e}"))),

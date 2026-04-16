@@ -31,19 +31,14 @@ lazy_static! {
 }
 
 /// Device type classification
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum DeviceType {
     Inverter,
     PVLink, // Combined PV Links and String Combiners
     Battery,
+    #[default]
     Unknown,
-}
-
-impl Default for DeviceType {
-    fn default() -> Self {
-        DeviceType::Unknown
-    }
 }
 
 /// Live device data for dashboard display
@@ -401,7 +396,7 @@ async fn build_dashboard_devices() -> DashboardDevices {
     // Group values by serial number
     let mut device_map: HashMap<String, DeviceData> = HashMap::new();
 
-    for (key, value) in values.iter() {
+    for (_, value) in values.iter() {
         let serial = &value.serial_number;
         let new_device_type = classify_device_type(value.model_id, &value.model_name);
 
@@ -671,8 +666,6 @@ async fn build_dashboard_metrics(tz_offset: i32) -> DashboardMetrics {
     let mut solar_today = 0.0;
     let mut solar_yesterday = 0.0;
 
-    let mut grid_import_today = 0.0;
-    let mut grid_export_today = 0.0;
     let mut grid_import_month = 0.0;
     let mut grid_export_month = 0.0;
 
@@ -735,7 +728,6 @@ async fn build_dashboard_metrics(tz_offset: i32) -> DashboardMetrics {
                         && (value.model_id == 64204 || value.model_id == 10) =>
                 {
                     // 64204 is Rebus Grid. User observation suggests WhIn is Export (Leaving site).
-                    grid_export_today += get_delta(&daily_baselines, current_val);
                     grid_export_month += get_delta(&monthly_baselines, current_val);
                 }
                 (_, "whout")
@@ -743,7 +735,6 @@ async fn build_dashboard_metrics(tz_offset: i32) -> DashboardMetrics {
                         && (value.model_id == 64204 || value.model_id == 10) =>
                 {
                     // WhOut is Import (Entering site)
-                    grid_import_today += get_delta(&daily_baselines, current_val);
                     grid_import_month += get_delta(&monthly_baselines, current_val);
                 }
                 _ => {}
@@ -842,25 +833,6 @@ async fn refresh_baselines() {
 
     // Helper to fetch baselines
     async fn fetch_at(pool: &sqlx::SqlitePool, ts: DateTime<Utc>) -> HashMap<String, f64> {
-        let query = r#"
-            SELECT uniqueid, value 
-            FROM point_history 
-            WHERE timestamp >= ? 
-            AND (
-                uniqueid LIKE '%.Wh' OR 
-                uniqueid LIKE '%.DCWh' OR 
-                uniqueid LIKE '%.WhIn' OR 
-                uniqueid LIKE '%.WhOut' OR
-                uniqueid LIKE '%.E'
-            )
-            GROUP BY uniqueid
-            ORDER BY timestamp ASC
-        "#;
-        // Note: GROUP BY uniqueid without aggregate function in SQLite usually returns the *first* row encountered?
-        // Actually SQLite behavior is ambiguous unless Min(timestamp).
-        // Better:
-        // SELECT uniqueid, value FROM point_history WHERE timestamp >= ? ... ORDER BY timestamp ASC
-        // And manually map first occurrence.
         let q = r#"
             SELECT uniqueid, value 
             FROM point_history 
@@ -915,7 +887,7 @@ async fn refresh_baselines() {
     *MONTHLY_BASELINES.write().await = monthly;
     *LAST_BASELINE_UPDATE.write().await = now;
 
-    println!(
+    info!(
         "Refreshed baselines. Today: {}, Yest: {}, Month: {}",
         DAILY_BASELINES.read().await.len(),
         YESTERDAY_BASELINES.read().await.len(),
@@ -1030,7 +1002,7 @@ pub async fn store_live_value(
 /// Build historical data for performance chart
 /// TODO: Connect this to the actual point_history database
 async fn build_history_data(period: &str, tz_offset: i32) -> HistoryResponse {
-    use chrono::{Duration as ChronoDuration, Timelike};
+    use chrono::Duration as ChronoDuration;
 
     let now = Utc::now();
     // JS getTimezoneOffset returns positive minutes for timezones BEHIND UTC (e.g. UTC-4 = 240)
@@ -1041,12 +1013,12 @@ async fn build_history_data(period: &str, tz_offset: i32) -> HistoryResponse {
         "yesterday" => {
             let local_yesterday = local_now - ChronoDuration::days(1);
             let local_midnight = local_yesterday.date_naive().and_hms_opt(0, 0, 0).unwrap();
-            let utc_start = DateTime::<Utc>::from_utc(local_midnight, Utc)
+            let utc_start = DateTime::<Utc>::from_naive_utc_and_offset(local_midnight, Utc)
                 + ChronoDuration::minutes(tz_offset as i64);
 
             // End is Today 00:00 Local
             let local_today = local_now.date_naive().and_hms_opt(0, 0, 0).unwrap();
-            let utc_end = DateTime::<Utc>::from_utc(local_today, Utc)
+            let utc_end = DateTime::<Utc>::from_naive_utc_and_offset(local_today, Utc)
                 + ChronoDuration::minutes(tz_offset as i64);
 
             (utc_start, utc_end, 5)
@@ -1057,7 +1029,7 @@ async fn build_history_data(period: &str, tz_offset: i32) -> HistoryResponse {
         _ => {
             // today
             let local_midnight = local_now.date_naive().and_hms_opt(0, 0, 0).unwrap();
-            let utc_start = DateTime::<Utc>::from_utc(local_midnight, Utc)
+            let utc_start = DateTime::<Utc>::from_naive_utc_and_offset(local_midnight, Utc)
                 + ChronoDuration::minutes(tz_offset as i64);
             (utc_start, now, 5)
         }
@@ -1210,7 +1182,7 @@ async fn build_history_data(period: &str, tz_offset: i32) -> HistoryResponse {
 
             if let Some(dt) = DateTime::from_timestamp(ts, 0) {
                 data.push(HistoryDataPoint {
-                    timestamp: DateTime::<Utc>::from_utc(dt.naive_utc(), Utc),
+                    timestamp: DateTime::<Utc>::from_naive_utc_and_offset(dt.naive_utc(), Utc),
                     solar: solar_total / 1000.0,
                     battery: battery_total / 1000.0,
                     grid: grid_total / 1000.0,

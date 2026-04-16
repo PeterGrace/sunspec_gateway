@@ -46,12 +46,11 @@ impl MonitoredPoint {
     pub fn new(model: String, pc: PointConfig, hass_enabled: Option<bool>) -> anyhow::Result<Self> {
         debug!("Creating a monitoredpoint for {model}/{}", pc.name());
 
-        let interval_checked: u64;
-        if pc.interval < LOWER_LIMIT_INTERVAL {
-            interval_checked = LOWER_LIMIT_INTERVAL
+        let interval_checked: u64 = if pc.interval < LOWER_LIMIT_INTERVAL {
+            LOWER_LIMIT_INTERVAL
         } else {
-            interval_checked = pc.interval
-        }
+            pc.interval
+        };
         let write_mode = match pc.readwrite {
             None => Access::ReadOnly,
             Some(v) => {
@@ -65,11 +64,11 @@ impl MonitoredPoint {
         let homeassistant_discovery = {
             if let Some(v) = hass_enabled {
                 match v {
-                    true => pc.homeassistant.unwrap_or_else(|| true),
+                    true => pc.homeassistant.unwrap_or(true),
                     false => false,
                 }
             } else {
-                pc.homeassistant.unwrap_or_else(|| true)
+                pc.homeassistant.unwrap_or(true)
             }
         };
 
@@ -78,7 +77,7 @@ impl MonitoredPoint {
             error!(msg);
             bail!(msg);
         }
-        let mut monitored_point_target: PointIdentifier = {
+        let monitored_point_target: PointIdentifier = {
             if pc.catalog_ref.is_some() {
                 PointIdentifier::Catalog(pc.catalog_ref.clone().unwrap())
             } else {

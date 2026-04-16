@@ -1,7 +1,6 @@
 use crate::consts::MQTT_POLL_INTERVAL_MILLIS;
 use crate::ipc::{IPCMessage, InboundMessage, PublishMessage};
 use crate::mqtt_connection::MqttConnection;
-use crate::payload::Payload;
 use crate::GatewayError;
 use chrono::Utc;
 use rumqttc::{Event, Incoming, Outgoing, QoS};
@@ -9,7 +8,6 @@ use std::collections::VecDeque;
 use std::str;
 use std::time::Duration;
 use tokio::sync::mpsc;
-use tokio::sync::mpsc::error::TryRecvError;
 use tokio::time::{sleep, timeout};
 
 use crate::modules::status_structs::SystemStatus;
@@ -96,7 +94,7 @@ pub async fn mqtt_poll_loop(
                     }
                 },
             }
-            if dlq.len() > 0 {
+            if !dlq.is_empty() {
                 trace!("DLQ is {}", dlq.len());
             }
         }
@@ -107,8 +105,8 @@ pub async fn mqtt_poll_loop(
         if task.is_finished() {
             panic!("mqtt eventloop finished, this only happens in a connection error");
         }
-        match bcast_rx.try_recv() {
-            Ok(ipcm) => match ipcm {
+        if let Ok(ipcm) = bcast_rx.try_recv() {
+            match ipcm {
                 IPCMessage::Shutdown => {
                     info!("MQTT Received shutdown message, exiting thread.");
                     let _ = mqtt.client.disconnect().await;
@@ -118,8 +116,7 @@ pub async fn mqtt_poll_loop(
                 IPCMessage::Outbound(_) => {}
                 IPCMessage::PleaseReconnect(_, _) => {}
                 IPCMessage::Error(_) => {}
-            },
-            Err(_) => {}
+            }
         }
         //region MQTT loop channel handling
         while let Ok(ipcm) = incoming_rx.try_recv() {
@@ -146,7 +143,7 @@ pub async fn mqtt_poll_loop(
         }
         //endregion
         {
-            if outbound.len() > 0 {
+            if !outbound.is_empty() {
                 debug!(
                     "Draining outbound queue: {} items to process",
                     outbound.len()
@@ -172,12 +169,7 @@ pub async fn mqtt_poll_loop(
                     .await
                     {
                         Ok(result) => match result {
-                            Ok(_) => {
-                                if let Payload::Config(config) = msg.payload {
-                                    let vals =
-                                        config.unique_id.splitn(3, ".").collect::<Vec<&str>>();
-                                };
-                            }
+                            Ok(_) => {}
                             Err(e) => {
                                 error!("Couldn't send message: {e}");
                             }

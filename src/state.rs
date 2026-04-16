@@ -1,5 +1,3 @@
-use sqlx::sqlite::SqlitePool;
-
 use crate::auth::token_extractor::JwksCache;
 use crate::modules::users::User;
 use cached::UnboundCache;

@@ -240,7 +240,7 @@ pub async fn poll_loop(
                 }
 
                 for p_config in expanded_points {
-                    let mut monitored_point_target: PointIdentifier = {
+                    let monitored_point_target: PointIdentifier = {
                         if p_config.catalog_ref.is_some() {
                             PointIdentifier::Catalog(p_config.catalog_ref.clone().unwrap())
                         } else {
@@ -282,7 +282,7 @@ pub async fn poll_loop(
             let time_pad = thread_rng().gen_range(0..(interval / 3)) as i64;
             let model = requested_point_to_check.model.clone();
             let point_name = requested_point_to_check.name.clone();
-            let mut uniqueid = format!("{sn}.{model}.{point_name}");
+            let uniqueid = format!("{sn}.{model}.{point_name}");
             let log_prefix = format!(
                 "[{}:{} {sn} {model}/{point_name} {idx}/{point_count}]",
                 unit.addr, unit.slave_id
@@ -382,8 +382,7 @@ pub async fn poll_loop(
                                                                                 PointIdentifier::Point(inmsg.point_name.clone()),
                                                                                 ValueType::Integer(
                                                                                     payload_val
-                                                                                        .try_into()
-                                                                                        .unwrap(),
+                                                                                        .into(),
                                                                                 ),
                                                                             )
                                                                             .instrument(span!(
@@ -432,9 +431,7 @@ pub async fn poll_loop(
                                                                                     .clone(),
                                                                             ),
                                                                             ValueType::Integer(
-                                                                                payload_val
-                                                                                    .try_into()
-                                                                                    .unwrap(),
+                                                                                payload_val.into(),
                                                                             ),
                                                                         )
                                                                         .instrument(span!(
@@ -522,7 +519,7 @@ pub async fn poll_loop(
                             error!("{log_prefix}: Received outbound message, but we're not expecting any: {o:#?}");
                             continue;
                         }
-                        IPCMessage::PleaseReconnect(addr, slave) => {
+                        IPCMessage::PleaseReconnect(_, _) => {
                             error!("Received a pleasereconnect but its unhandled");
                             return Err(GatewayError::ExitingThread);
                         }
@@ -585,7 +582,7 @@ pub async fn poll_loop(
             //region actually get the point and generate payload
             if input_only {
                 debug!("{log_prefix}: this point is input-only; skipping point get and just sending config payload.");
-                let payloads = generate_payloads(unit, None, &requested_point_to_check, None)
+                let payloads = generate_payloads(unit, None, requested_point_to_check, None)
                     .instrument(span!(Level::INFO, "generate_payloads"))
                     .await;
 
@@ -667,7 +664,7 @@ pub async fn poll_loop(
                             let payloads = generate_payloads(
                                 unit,
                                 Some(&recvd_point),
-                                &requested_point_to_check,
+                                requested_point_to_check,
                                 Some(&val),
                             )
                             .instrument(span!(Level::INFO, "generate_payloads"))
@@ -749,10 +746,8 @@ pub async fn poll_loop(
         // although we keep track of points to remove in a vector, keeping track of updated indices
         // after removing items from the array would be a pain, so we'll just pop one of them for now
         // and catch any new deletes on follow-on loops.
-        if remove_points.len() > 0 {
-            for rp in remove_points {
-                points = points.into_iter().filter(|p| p.name != rp).collect();
-            }
+        if !remove_points.is_empty() {
+            points.retain(|p| !remove_points.contains(&p.name));
         }
 
         debug!(%addr, %sn, "Device tick");
