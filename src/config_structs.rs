@@ -1,25 +1,29 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use sunspec_rs::sunspec_connection::TlsConfig;
 
-#[derive(Deserialize, Clone, Debug, Default)]
+use utoipa::ToSchema;
+
+#[derive(Deserialize, Serialize, Clone, Debug, Default, ToSchema)]
 pub struct TracingConfig {
     pub url: String,
     pub sample_rate: f32,
 }
-#[derive(Deserialize, Clone, Debug, Default)]
+#[derive(Deserialize, Serialize, Clone, Debug, Default, ToSchema)]
 pub struct UnitConfig {
     pub addr: String,
     pub slaves: Vec<u8>,
+    #[serde(skip)]
+    #[schema(ignore)]
     pub tls: Option<TlsConfig>,
 }
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Deserialize, Serialize, Clone, Debug, ToSchema)]
 pub struct Switchable {
     pub on: String,
     pub off: String,
 }
 
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Deserialize, Serialize, Clone, Debug, ToSchema)]
 pub struct Numerable {
     pub min: i32,
     pub max: i32,
@@ -27,7 +31,7 @@ pub struct Numerable {
     pub mode: Option<String>,
 }
 
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Deserialize, Serialize, Clone, Debug, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum InputType {
     Select(Vec<String>),
@@ -36,7 +40,7 @@ pub enum InputType {
     Number(Numerable),
 }
 
-#[derive(Deserialize, Clone, Debug, Default)]
+#[derive(Deserialize, Serialize, Clone, Debug, Default, ToSchema)]
 pub struct PointConfig {
     pub point: Option<String>,
     pub catalog_ref: Option<String>,
@@ -54,20 +58,21 @@ pub struct PointConfig {
     pub value_min: Option<f64>,
     pub value_max: Option<f64>,
     pub check_deviations: Option<u16>,
+    pub topic_name: Option<String>,
 }
 impl PointConfig {
     pub fn name(&self) -> String {
         if self.catalog_ref.is_some() {
-            return format!("{}", self.catalog_ref.clone().unwrap());
+            return self.catalog_ref.clone().unwrap();
         }
         if self.point.is_some() {
-            return format!("{}", self.point.clone().unwrap());
+            return self.point.clone().unwrap();
         }
         "".to_string()
     }
 }
 
-#[derive(Deserialize, Clone, Debug, Default)]
+#[derive(Deserialize, Serialize, Clone, Debug, Default, ToSchema)]
 pub struct GatewayConfig {
     pub hass_enabled: Option<bool>,
     pub units: Vec<UnitConfig>,

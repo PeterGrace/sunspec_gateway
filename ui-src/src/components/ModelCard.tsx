@@ -22,38 +22,38 @@ export const ModelCard: React.FC<ModelCardProps> = ({ model, onPointClick }) => 
   };
 
   return (
-    <div className="bg-slate-50 border border-slate-200 rounded-lg hover:bg-slate-100 transition-all duration-200">
-      <div 
+    <div className="bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800/50 transition-all duration-200">
+      <div
         className="p-4 flex items-center justify-between cursor-pointer"
         onClick={() => setIsExpanded(!isExpanded)}
       >
         <div className="flex items-center space-x-3">
-          <div className={`w-12 h-12 ${getModelColor(model.model)} rounded-lg flex items-center justify-center`}>
+          <div className={`w-12 h-12 ${getModelColor(model.model)} dark:bg-opacity-20 rounded-lg flex items-center justify-center`}>
             {getModelIcon(model.model)}
           </div>
           <div>
-            <h3 className="font-semibold text-slate-800 text-base">{model.name}</h3>
-            <p className="text-sm text-slate-500">{model.description}</p>
-            <p className="text-xs text-slate-400 mt-1">Model {model.model}</p>
+            <h3 className="font-semibold text-slate-800 dark:text-white text-base">{model.name}</h3>
+            <p className="text-sm text-slate-500 dark:text-slate-400">{model.description}</p>
+            <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">Model {model.model}</p>
           </div>
         </div>
         <div className="flex items-center space-x-2">
-          <span className="text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded-full">
+          <span className="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-2 py-1 rounded-full">
             {model.points.length} points
           </span>
           {isExpanded ? (
-            <ChevronDown className="w-5 h-5 text-slate-400" />
+            <ChevronDown className="w-5 h-5 text-slate-400 dark:text-slate-500" />
           ) : (
-            <ChevronRight className="w-5 h-5 text-slate-400" />
+            <ChevronRight className="w-5 h-5 text-slate-400 dark:text-slate-500" />
           )}
         </div>
       </div>
-      
+
       {isExpanded && (
-        <div className="px-4 pb-4 border-t border-slate-200">
+        <div className="px-4 pb-4 border-t border-slate-200 dark:border-slate-700">
           <div className="pt-4 space-y-3">
             {model.points.map((point, index) => (
-              <PointCard 
+              <PointCard
                 key={`${point.model}-${point.name}-${index}`}
                 point={point}
                 onPointClick={onPointClick}

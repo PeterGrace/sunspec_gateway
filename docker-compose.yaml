@@ -1,6 +1,8 @@
 services:
   sunspec_gateway:
-    image: docker.io/petergrace/sunspec_gateway:latest
+    image: sunspec_gateway:latest
+    pull_policy: never
+    ports:
+      - "8300:8300"
     volumes:
-      - "./config.yaml:/opt/sunspec_gateway/config.yaml"
-
+      - "./sunspec_gateway.db:/opt/sunspec_gateway/sunspec_gateway.db"

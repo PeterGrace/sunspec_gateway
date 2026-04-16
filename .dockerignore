@@ -1,1 +1,8 @@
-target/debug*
+target/
+.git/
+.github/
+node_modules/
+ui-src/node_modules/
+ui-src/dist/
+.DS_Store
+*.swp

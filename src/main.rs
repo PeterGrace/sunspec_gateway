@@ -27,7 +27,7 @@ use crate::routes::USERS_TAG;
 use axum::middleware;
 use std::net::Ipv6Addr;
 use tokio::net::TcpListener;
-use tower_http::services::ServeDir;
+use tower_http::services::{ServeDir, ServeFile};
 use tower_sessions::Expiry;
 use tower_sessions::MemoryStore;
 use tower_sessions::SessionManagerLayer;
@@ -35,16 +35,21 @@ use utoipa_axum::router::OpenApiRouter;
 
 use crate::consts::*;
 use crate::ipc::{IPCMessage, InboundMessage, PublishMessage};
+use crate::modules::controls::controls_routes;
+use crate::modules::dashboard::{dashboard_routes, LiveValue};
 use crate::modules::points::point_routes;
+use crate::modules::settings::settings_routes;
 use crate::mqtt_connection::MqttConnection;
 use crate::mqtt_poll::mqtt_poll_loop;
-use crate::state_mgmt::prepare_to_database;
+use crate::state_mgmt::{load_config, prepare_to_database, save_config};
 use crate::sunspec_poll::poll_loop;
 
 use console_subscriber as tokio_console_subscriber;
 use futures::FutureExt;
 use lazy_static::lazy_static;
+#[allow(unused_imports)]
 use opentelemetry::global;
+#[allow(unused_imports)]
 use opentelemetry::sdk::propagation::TraceContextPropagator;
 use opentelemetry::sdk::trace::{BatchConfig, Tracer};
 use opentelemetry::sdk::{trace, Resource};
@@ -52,8 +57,8 @@ use opentelemetry::KeyValue;
 use opentelemetry_otlp::WithExportConfig;
 
 use std::collections::{HashMap, VecDeque};
-use std::fs;
 use std::process;
+use std::sync::Arc;
 
 use crate::auth::token_extractor::JwksCache;
 use crate::modules::users::user_routes;
@@ -62,14 +67,14 @@ use crate::state::AppState;
 use axum::http::Method;
 use axum::response::Redirect;
 use axum::routing::get;
-use chrono::{DateTime, NaiveDateTime, TimeDelta, Utc};
+use chrono::{DateTime, TimeDelta, Utc};
 use std::time::Duration;
 use sunspec_rs::model_data::ModelData;
 use sunspec_rs::sunspec_connection::TlsConfig;
 use sunspec_unit::SunSpecUnit;
 use tokio::sync::{broadcast, mpsc, OnceCell, RwLock};
 use tokio::task;
-use tokio::time::{sleep, timeout, Instant};
+use tokio::time::{sleep, timeout};
 use tower_http::cors::{Any, CorsLayer};
 use tower_sessions::cookie::time::Duration as CookieDuration;
 use tracing::Instrument;
@@ -98,23 +103,11 @@ lazy_static! {
 
     static ref MODEL_HASH: RwLock<HashMap<String, HashMap<u16, ModelData>>> = RwLock::new(HashMap::new());
 
+    /// Live values from polling, used by dashboard API
+    pub static ref LIVE_VALUES: RwLock<HashMap<String, LiveValue>> = RwLock::new(HashMap::new());
+
     //region create SETTINGS static object
-    static ref SETTINGS: RwLock<GatewayConfig> = RwLock::new({
-         let cfg_file = match std::env::var("CONFIG_FILE_PATH") {
-             Ok(s) => s,
-             Err(_e) => { "./config.yaml".to_string()}
-         };
-        let yaml = fs::read_to_string(cfg_file).unwrap_or_else(|e| {
-            die(&format!("Can't read config file: {e}"));
-            String::default()
-            });
-        let gc: GatewayConfig = match serde_yaml::from_str(&yaml)  {
-            Ok(gc) => gc,
-            Err(e) => { die(&format!("Couldn't deserialize GatewayConfig: {e}"));
-            GatewayConfig::default()}
-        };
-        gc
-    });
+    static ref SETTINGS: RwLock<GatewayConfig> = RwLock::new(GatewayConfig::default());
     //endregion
 }
 
@@ -137,7 +130,7 @@ async fn main() {
     debug!(
         "sunspec_gateway cargo:{}, githash:{}",
         env!("CARGO_PKG_VERSION"),
-        env!("GIT_HASH")
+        option_env!("GIT_HASH").unwrap_or("unknown")
     );
 
     let (tx, mut rx) = mpsc::channel(MPSC_BUFFER_SIZE);
@@ -148,7 +141,7 @@ async fn main() {
     let bcasttx = broadcast_tx.clone();
     let _ = ctrlc::set_handler(move || {
         println!("Received Ctrl-C, communicating to threads to stop");
-        //opentelemetry::global::shutdown_tracer_provider();
+        opentelemetry::global::shutdown_tracer_provider();
         let _ = SHUTDOWN.set(true);
         let _ = bcasttx.send(IPCMessage::Shutdown);
     });
@@ -171,9 +164,8 @@ async fn main() {
     tracing::subscriber::set_global_default(subscriber)
         .expect("Can't set global subscriber for logging.");
 
-    let mut tracer: Option<Tracer> = None;
-    let config = SETTINGS.read().await;
-    // let tracer_layer = if config.tracing.is_some() {
+    let tracer: Option<Tracer> = None;
+    // let config = SETTINGS.read().await;
     //     let t = config.tracing.clone().unwrap();
     //     let tracer = Some(make_tracer(t.url, t.sample_rate));
     //     Some(tracing_opentelemetry::layer().with_tracer(tracer.unwrap().clone()))
@@ -191,12 +183,61 @@ async fn main() {
     if let Err(e) = prepare_to_database().await {
         die(&format!("Can't database: {e}"))
     }
+
+    //region initialize settings from DB or Config File
+    {
+        // Try to load from DB
+        let db_config = match load_config().await {
+            Ok(c) => c,
+            Err(e) => {
+                error!("Failed to load config from DB: {e}");
+                None
+            }
+        };
+
+        let final_config = match db_config {
+            Some(c) => {
+                info!("Loaded configuration from Database");
+                c
+            }
+            None => {
+                info!("No config in DB, attempting to load from config.yaml");
+                // Load from YAML
+                let cfg_file =
+                    std::env::var("CONFIG_FILE_PATH").unwrap_or("./config.yaml".to_string());
+                let yaml = std::fs::read_to_string(&cfg_file).unwrap_or_else(|e| {
+                    warn!("Can't read config file: {e}. Using defaults.");
+                    String::default()
+                });
+                let gc: GatewayConfig = serde_yaml::from_str(&yaml).unwrap_or_else(|e| {
+                    warn!("Couldn't deserialize GatewayConfig: {e}. Using defaults.");
+                    GatewayConfig::default()
+                });
+
+                // Save to DB for next time
+                if let Err(e) = save_config(&gc).await {
+                    error!("Failed to migrate config to DB: {e}");
+                } else {
+                    info!("Migrated config.yaml to Database settings");
+                }
+                gc
+            }
+        };
+
+        *SETTINGS.write().await = final_config;
+    }
     //endregion
+    //endregion
+
+    let config = SETTINGS.read().await.clone();
 
     let user_cache = None;
     let state = AppState {
         jwks_cache: JwksCache::new(),
         user_cache,
+        status: Arc::new(RwLock::new(
+            crate::modules::status_structs::SystemStatus::default(),
+        )),
     };
 
     //region axum route setup and serve()
@@ -224,10 +265,25 @@ async fn main() {
 
     let public_routes = OpenApiRouter::new()
         .merge(register_routes(state.clone()))
-        .nest_service("/ui", ServeDir::new("ui"))
+        .nest_service(
+            "/ui",
+            ServeDir::new("ui").fallback(ServeFile::new("ui/index.html")),
+        )
         .nest(
             &format!("{API_VER}/{POINTS_TAG}"),
             point_routes(state.clone()),
+        )
+        .nest(
+            &format!("{API_VER}/{DASHBOARD_TAG}"),
+            dashboard_routes(state.clone()),
+        )
+        .nest(
+            &format!("{API_VER}/settings"),
+            settings_routes(state.clone()),
+        )
+        .nest(
+            &format!("{API_VER}/controls"),
+            controls_routes().with_state(state.clone()),
         )
         .route(API_PATH, get(openapi));
 
@@ -243,7 +299,7 @@ async fn main() {
         .merge(protected_routes)
         .layer(cors_layer)
         .layer(session_layer)
-        .with_state(state)
+        .with_state(state.clone())
         .split_for_parts();
 
     let app = router
@@ -253,48 +309,60 @@ async fn main() {
         error!("Couldn't store api into document variable: {e}");
     }
 
-    let listener = TcpListener::bind((Ipv6Addr::UNSPECIFIED, 8080))
+    let listener = TcpListener::bind((Ipv6Addr::UNSPECIFIED, 8300))
         .await
         .expect("Failed to bind");
-    let _ = tokio::task::Builder::new()
-        .name("axum-listener")
-        .spawn(async move {
-            let _ = axum::serve(listener, app).await;
-        });
+    tokio::spawn(async move {
+        let _ = axum::serve(listener, app).await;
+    });
+
+    //endregion
 
     //endregion
 
     //region create mqtt server connection and spawn mqtt thread
-    let mqtt_conn = match MqttConnection::new(
-        config
-            .mqtt_client_id
-            .clone()
-            .unwrap_or("sunspec_gateway".to_string()),
-        config.mqtt_server_addr.clone(),
-        config.mqtt_server_port.unwrap_or(1883),
-        config.mqtt_username.clone(),
-        config.mqtt_password.clone(),
-    )
-    .await
-    {
-        Ok(m) => m,
-        Err(_e) => {
-            return die("Couldn't create mqtt connection object: {e}");
+    let mqtt_handler = if !config.mqtt_server_addr.is_empty() {
+        {
+            let mut s = state.status.write().await;
+            s.mqtt_enabled = true;
         }
-    };
-    let bcasttx = broadcast_tx.clone();
-    let mqtt_handler = tokio::task::Builder::new()
-        .name("mqtt_thread")
-        .spawn(async move {
+        let mqtt_conn = match MqttConnection::new(
+            config
+                .mqtt_client_id
+                .clone()
+                .unwrap_or("sunspec_gateway".to_string()),
+            config.mqtt_server_addr.clone(),
+            config.mqtt_server_port.unwrap_or(1883),
+            config.mqtt_username.clone(),
+            config.mqtt_password.clone(),
+        )
+        .await
+        {
+            Ok(m) => m,
+            Err(e) => {
+                return die(&format!("Couldn't create mqtt connection object: {e}"));
+            }
+        };
+        let bcasttx = broadcast_tx.clone();
+        let status = state.status.clone();
+        Some(tokio::spawn(async move {
             let _ = mqtt_poll_loop(
                 mqtt_conn,
                 mqtt_rx,
                 bcasttx.clone().subscribe(),
                 from_mqtt_tx,
+                status,
             )
             .await;
-        })
-        .unwrap();
+        }))
+    } else {
+        warn!("No MQTT configuration found. Running in Setup Mode. Please configure settings via the UI.");
+        {
+            let mut s = state.status.write().await;
+            s.mqtt_enabled = false;
+        }
+        None
+    };
     //endregion
     let mut retry_queue: VecDeque<(String, u8, DateTime<Utc>)> = VecDeque::new();
     //region populate sunspec devices into an array
@@ -332,25 +400,20 @@ async fn main() {
 
     //region create sunspec thread workers
     for d in devices {
-        let mut tasks = TASK_PILE.write().await;
         let tx = tx.clone();
         let bcast_rx = broadcast_tx.clone().subscribe();
+        let status = state.status.clone();
         let task_name = format!("poll_loop_{}", d.serial_number);
         let span = tracing::info_span!("task", name = task_name.as_str());
-        let bar = task::Builder::new()
-            .name(&format!("worker-{}", d.clone().serial_number))
-            .spawn(
-                async move {
-                    match poll_loop(&d, tx, bcast_rx).await {
-                        Ok(_) => Ok(()),
-                        Err(e) => Err(e),
-                    }
+        tokio::spawn(
+            async move {
+                match poll_loop(&d, tx, bcast_rx, status).await {
+                    Ok(_) => Ok(()),
+                    Err(e) => Err(e),
                 }
-                .instrument(span),
-            );
-        if bar.is_err() {
-            error!("unit poll_loop crashed out");
-        }
+            }
+            .instrument(span),
+        );
     }
 
     //endregion
@@ -362,92 +425,88 @@ async fn main() {
     loop {
         //endregion
         //region sunspec device channel loop handling
-        while rx.len() > 0 {
-            match rx.try_recv() {
-                Ok(ipcm) => {
-                    match ipcm {
-                        IPCMessage::Shutdown => {
-                            unreachable!();
-                        }
-                        IPCMessage::Outbound(o) => {
+        while !rx.is_empty() {
+            if let Ok(ipcm) = rx.try_recv() {
+                match ipcm {
+                    IPCMessage::Shutdown => {
+                        unreachable!();
+                    }
+                    IPCMessage::Outbound(o) => {
+                        if mqtt_handler.is_some() {
                             msg_queue.push_front(o);
                         }
-                        IPCMessage::Error(e) => {
-                            die(&format!("serial_number={}: {}", e.serial_number, e.msg));
-                        }
-                        IPCMessage::PleaseReconnect(addr, slave) => {
-                            let tx = tx.clone();
-                            let bcast_rx = broadcast_tx.subscribe();
-                            let mut tls: Option<TlsConfig> = None;
-                            warn!("Reconnect requested for {addr}/{slave}");
-                            for u in config.units.clone() {
-                                if u.addr == addr && u.slaves.contains(&slave) {
-                                    tls = u.tls.clone();
-                                    break;
-                                }
+                    }
+                    IPCMessage::Error(e) => {
+                        die(&format!("serial_number={}: {}", e.serial_number, e.msg));
+                    }
+                    IPCMessage::PleaseReconnect(addr, slave) => {
+                        let tx = tx.clone();
+                        let bcast_rx = broadcast_tx.subscribe();
+                        let mut tls: Option<TlsConfig> = None;
+                        warn!("Reconnect requested for {addr}/{slave}");
+                        for u in config.units.clone() {
+                            if u.addr == addr && u.slaves.contains(&slave) {
+                                tls = u.tls.clone();
+                                break;
                             }
-                            let ssu: Option<SunSpecUnit> = match tokio::time::timeout(
-                                Duration::from_secs(SUNSPEC_DEVICE_CONNECT_TIMEOUT),
-                                SunSpecUnit::new(addr.clone(), slave.to_string(), tls),
-                            )
-                            .await
-                            {
-                                Ok(good) => match good {
+                        }
+                        let ssu: Option<SunSpecUnit> = match tokio::time::timeout(
+                            Duration::from_secs(SUNSPEC_DEVICE_CONNECT_TIMEOUT),
+                            SunSpecUnit::new(addr.clone(), slave.to_string(), tls),
+                        )
+                        .await
+                        {
+                            Ok(good) => {
+                                match good {
                                     Ok(unit) => Some(unit),
                                     Err(e) => {
                                         warn!("{addr}:{slave} - Couldn't reconnect to sunspec unit: {e}");
                                         retry_queue.push_back((addr, slave, Utc::now()));
                                         None
                                     }
-                                },
-                                Err(e) => {
-                                    warn!("{addr}:{slave} - Couldn't create new sunspecunit to replace dead conn: {e}");
-                                    retry_queue.push_back((addr, slave, Utc::now()));
-                                    None
                                 }
-                            };
-                            if ssu.is_some() {
-                                let unit = ssu.unwrap();
-                                warn!(
-                                    "{}/{} - Initial reconnection initiated, starting fresh task",
-                                    unit.addr, unit.slave_id
-                                );
-                                let mut tasks = TASK_PILE.write().await;
-                                let build = tokio::task::Builder::new();
-                                let taskname = format!("worker-{}", unit.serial_number);
-                                tasks
-                                    .build_task()
-                                    .name(&taskname.clone())
-                                    .spawn(async move {
-                                        match poll_loop(&unit, tx, bcast_rx).await {
-                                            Ok(_) => {
-                                                error!("Exited... OK? from the sunspec poll?  Unpossible!");
-                                                Ok(())
-                                            },
-                                            Err(e) => {
-                                                error!("{taskname} thread exited in error: {e}");
-                                                return Err(e)
-                                            },
-                                        }
-                                    })
-                                    .unwrap();
-                            } else {
-                                error!("Reconnect was unsuccessful.");
                             }
-                        }
-                        IPCMessage::Inbound(_) => {
-                            // we don't send inbounds to mqtt
-                            unreachable!();
+                            Err(e) => {
+                                warn!("{addr}:{slave} - Couldn't create new sunspecunit to replace dead conn: {e}");
+                                retry_queue.push_back((addr, slave, Utc::now()));
+                                None
+                            }
+                        };
+                        if let Some(unit) = ssu {
+                            warn!(
+                                "{}/{} - Initial reconnection initiated, starting fresh task",
+                                unit.addr, unit.slave_id
+                            );
+                            let mut tasks = TASK_PILE.write().await;
+                            let taskname = format!("worker-{}", unit.serial_number);
+                            let status = state.status.clone();
+                            tasks.spawn(async move {
+                                match poll_loop(&unit, tx, bcast_rx, status).await {
+                                    Ok(_) => {
+                                        error!("Exited... OK? from the sunspec poll?  Unpossible!");
+                                        Ok(())
+                                    }
+                                    Err(e) => {
+                                        error!("{taskname} thread exited in error: {e}");
+                                        Err(e)
+                                    }
+                                }
+                            });
+                        } else {
+                            error!("Reconnect was unsuccessful.");
                         }
                     }
+                    IPCMessage::Inbound(_) => {
+                        // we don't send inbounds to mqtt
+                        unreachable!();
+                    }
                 }
-                Err(_) => {}
             }
         }
 
-        while from_mqtt_rx.len() > 0 {
-            match from_mqtt_rx.try_recv() {
-                Ok(recvd) => match recvd {
+        while !from_mqtt_rx.is_empty() {
+            if let Ok(recvd) = from_mqtt_rx.try_recv() {
+                match recvd {
                     IPCMessage::Inbound(inmsg) => {
                         info!(
                             "Received payload for {},{},{}:{}",
@@ -467,8 +526,7 @@ async fn main() {
                     IPCMessage::Error(_) => {
                         unreachable!();
                     }
-                },
-                Err(_) => {}
+                }
             }
         }
 
@@ -499,41 +557,28 @@ async fn main() {
 
         // check cleanups
         let mut tasks = TASK_PILE.write().await;
-        match tasks.join_next().now_or_never() {
-            Some(task) => {
-                match task {
-                    Some(t) => {
-                        match t {
-                            Ok(t1) => match t1 {
-                                Ok(_) => {
-                                    error!("Task exited, which should not happen.  Hopefully reconnecting.")
-                                }
-                                Err(e) => {
-                                    error!("Task exited with Ok(Err(e)): {e}");
-                                }
-                            },
-                            Err(e) => {
-                                // TODO: what does Err mean here?
-                                error!("Got an error when checking joinset: {e}");
-                            }
-                        }
-                    }
-                    None => {
-                        // No tasks waiting to report in
-                    }
+        if let Some(Some(t)) = tasks.join_next().now_or_never() {
+            match t {
+                Ok(Ok(_)) => {
+                    error!("Task exited, which should not happen.  Hopefully reconnecting.")
+                }
+                Ok(Err(e)) => {
+                    error!("Task exited with Ok(Err(e)): {e}");
+                }
+                Err(e) => {
+                    // TODO: what does Err mean here?
+                    error!("Got an error when checking joinset: {e}");
                 }
             }
-            None => {
-                // no tasks are ready to be queried
+        }
+
+        if let Some(handler) = &mqtt_handler {
+            if handler.is_finished() {
+                die("MQTT thread exited.");
             }
         }
 
-        if mqtt_handler.is_finished() {
-            die("MQTT thread exited.");
-        }
-
-        if tracer.is_some() {
-            let t = tracer.clone().unwrap();
+        if let Some(t) = &tracer {
             let tp = t.provider().unwrap();
             let _rs = tp.force_flush();
         }
@@ -565,7 +610,7 @@ pub fn make_tracer(url: String, sample: f32) -> Tracer {
         //.with_scheduled_delay(Duration::from_millis(5000))
         .with_max_export_timeout(Duration::from_secs(10))
         .with_max_queue_size(16384);
-    let otlp_tracer = opentelemetry_otlp::new_pipeline()
+    opentelemetry_otlp::new_pipeline()
         .tracing()
         .with_exporter(exporter)
         .with_trace_config(
@@ -590,8 +635,7 @@ pub fn make_tracer(url: String, sample: f32) -> Tracer {
         )
         .with_batch_config(batch_config)
         .install_batch(opentelemetry::runtime::Tokio)
-        .expect("Can't create tracer");
-    otlp_tracer
+        .expect("Can't create tracer")
 }
 
 async fn redirect_to_ui() -> Redirect {

@@ -10,7 +10,7 @@ license = "MIT"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-tokio = { version = "1.27.0", features = ["sync", "time", "tracing", "macros", "rt-multi-thread"] }
+tokio = { version = "1.38.0", features = ["sync", "time", "tracing", "macros", "rt-multi-thread"] }
 clap-verbosity-flag = "2.0.1"
 tracing = "0.1.37"
 tracing-subscriber = {version = "0.3.17", features = ["time"]}
@@ -28,7 +28,7 @@ prometheus = {version = "0.13.3", features=["process"]}
 #sunspec_rs = { path="../sunspec_rs" }
 sunspec_rs = { version = "0.10.4" }
 console-subscriber = "0.1.10"
-chrono = "0.4.28"
+chrono = { version = "0.4.28", features = ["serde"] }
 rand = "0.8.5"
 thiserror = "1.0.48"
 sqlx = {version = "0.7.1", features = ["sqlite", "runtime-tokio-rustls"]}
@@ -53,3 +53,4 @@ async-trait = "0.1.88"
 tower-sessions = "0.14.0"
 cached = { version = "0.55.1", features = ["async", "tokio"] }
 reqwest = { version = "0.12.14", features = ["json"] }
+tokio-stream = "0.1"
